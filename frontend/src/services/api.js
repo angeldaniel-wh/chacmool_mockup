@@ -460,6 +460,16 @@ export const vacationsAPI = {
     if (!r.ok) throw new Error('Failed to fetch employee balance');
     return r.json();
   },
+  adjustBalance: async (employeeId, payload) => {
+    const r = await fetch(`${API_URL}/api/vacations/balance/${employeeId}/adjust`, {
+      method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to adjust balance');
+    }
+    return r.json();
+  },
 };
 
 // Vacation Policies API

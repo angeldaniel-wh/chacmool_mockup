@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   XCircle,
   FileCheck2,
+  FileText,
   Plus,
   Search,
   Filter,
@@ -19,6 +20,7 @@ import {
   ChevronRight,
   ChevronLeft,
   AlertCircle,
+  AlertTriangle,
   TrendingDown,
   Wallet,
   Save,
@@ -27,10 +29,13 @@ import {
   Pencil,
   Settings,
   ListChecks,
+  Shield,
+  Sparkles,
   Wallet as WalletIcon,
 } from 'lucide-react';
 import { vacationsAPI, employeesAPI, vacationPoliciesAPI, vacationHolidaysAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import VacationDocument from '../components/VacationDocument';
 
 // =============== Helpers ===============
 const MONTHS_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -63,17 +68,62 @@ const countBusinessDays = (startISO, endISO) => {
 };
 
 const STATUS_STYLE = {
-  Pendiente: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
-  Aprobado: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-  Justificado: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+  Pendiente: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+  Aprobado: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  Justificado: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
   Rechazado: 'bg-red-50 text-red-700 ring-1 ring-red-200',
 };
 
 const STATUS_DOT = {
-  Pendiente: 'bg-slate-400',
-  Aprobado: 'bg-blue-500',
-  Justificado: 'bg-amber-500',
+  Pendiente: 'bg-amber-500',
+  Aprobado: 'bg-emerald-500',
+  Justificado: 'bg-blue-500',
   Rechazado: 'bg-red-500',
+};
+
+// Genera un código corto tipo EMP-001 a partir del id UUID del empleado
+const empCode = (id) => {
+  if (!id) return 'EMP-000';
+  const short = String(id).replace(/-/g, '').slice(-3).toUpperCase();
+  return `EMP-${short}`;
+};
+
+// Color usage scale (verde → ámbar → naranja → rojo) según porcentaje consumido
+const usageColor = (pct) => {
+  if (pct >= 90) return { bar: 'from-red-500 to-red-600', ring: 'ring-red-200', chip: 'bg-red-50 text-red-700', icon: 'text-red-600' };
+  if (pct >= 70) return { bar: 'from-orange-500 to-red-500', ring: 'ring-orange-200', chip: 'bg-orange-50 text-orange-700', icon: 'text-orange-600' };
+  if (pct >= 40) return { bar: 'from-amber-400 to-orange-500', ring: 'ring-amber-200', chip: 'bg-amber-50 text-amber-700', icon: 'text-amber-600' };
+  if (pct >= 20) return { bar: 'from-emerald-400 to-amber-400', ring: 'ring-emerald-200', chip: 'bg-emerald-50 text-emerald-700', icon: 'text-emerald-600' };
+  return { bar: 'from-emerald-400 to-emerald-600', ring: 'ring-emerald-200', chip: 'bg-emerald-50 text-emerald-700', icon: 'text-emerald-600' };
+};
+
+// Paleta por "madurez" para políticas de antigüedad
+const maturityPalette = (yearsFrom) => {
+  if (yearsFrom >= 10) return {
+    from: 'from-amber-200', to: 'to-yellow-50', ring: 'ring-amber-200',
+    icon: 'bg-amber-100 text-amber-700', accent: 'text-amber-700', label: 'Senior / Veterano',
+    barFrom: 'from-amber-400', barTo: 'to-yellow-500',
+  };
+  if (yearsFrom >= 5) return {
+    from: 'from-purple-100', to: 'to-pink-50', ring: 'ring-purple-200',
+    icon: 'bg-purple-100 text-purple-700', accent: 'text-purple-700', label: 'Experimentado',
+    barFrom: 'from-purple-400', barTo: 'to-pink-400',
+  };
+  if (yearsFrom >= 3) return {
+    from: 'from-indigo-100', to: 'to-blue-50', ring: 'ring-indigo-200',
+    icon: 'bg-indigo-100 text-indigo-700', accent: 'text-indigo-700', label: 'Consolidado',
+    barFrom: 'from-indigo-400', barTo: 'to-blue-400',
+  };
+  if (yearsFrom >= 1) return {
+    from: 'from-blue-100', to: 'to-cyan-50', ring: 'ring-blue-200',
+    icon: 'bg-blue-100 text-blue-700', accent: 'text-blue-700', label: 'En desarrollo',
+    barFrom: 'from-blue-400', barTo: 'to-cyan-400',
+  };
+  return {
+    from: 'from-emerald-100', to: 'to-lime-50', ring: 'ring-emerald-200',
+    icon: 'bg-emerald-100 text-emerald-700', accent: 'text-emerald-700', label: 'Nuevo / Junior',
+    barFrom: 'from-emerald-400', barTo: 'to-lime-400',
+  };
 };
 
 const TYPE_META = {
@@ -132,9 +182,9 @@ const TypeChip = ({ type }) => {
   );
 };
 
-// =============== Drawer: New Request ===============
+// =============== Modal: New Request ===============
 
-const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmployeeId, balance, balances = [], holidays }) => {
+const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmployeeId, balance, balances = [], holidays }) => {
   const [form, setForm] = useState({
     employeeId: currentEmployeeId || '',
     type: 'Vacaciones',
@@ -266,28 +316,34 @@ const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmp
   return (
     <AnimatePresence>
       {open && (
-        <>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={onClose}
+        >
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40"
-            onClick={onClose}
-          />
-          <motion.aside
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="fixed top-0 right-0 h-full w-full sm:w-[520px] bg-white shadow-2xl z-50 flex flex-col"
+            initial={{ opacity: 0, scale: 0.97, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden"
+            data-testid="new-request-modal"
           >
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">Nueva solicitud</h3>
-                <p className="text-xs text-slate-500">Selecciona los días en el calendario</p>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+                  <Palmtree className="w-5 h-5 text-slate-700" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Nueva solicitud</h3>
+                  <p className="text-xs text-slate-500">Selecciona los días en el calendario</p>
+                </div>
               </div>
-              <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
+              <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg" data-testid="new-request-close">
                 <X className="w-5 h-5 text-slate-500" />
               </button>
             </div>
@@ -447,6 +503,7 @@ const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmp
               <button
                 onClick={onClose}
                 className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-medium"
+                data-testid="new-request-cancel"
               >
                 Cancelar
               </button>
@@ -454,12 +511,13 @@ const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmp
                 onClick={handleSubmit}
                 disabled={!valid || submitting || exceedsBalance}
                 className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold"
+                data-testid="new-request-submit"
               >
                 {submitting ? 'Enviando…' : exceedsBalance ? 'Sin saldo suficiente' : 'Enviar solicitud'}
               </button>
             </div>
-          </motion.aside>
-        </>
+          </motion.div>
+        </motion.div>
       )}
     </AnimatePresence>
   );
@@ -1018,15 +1076,21 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
 
 // =============== BolsaTab (Bolsa de Días) ===============
 
-const BolsaTab = ({ isAdmin, balances, myBalance, policies }) => {
+const BolsaTab = ({ isAdmin, balances, myBalance, policies, employees, onRefresh }) => {
+  const [showWarning, setShowWarning] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+
   if (!isAdmin && myBalance) {
     const pct = myBalance.totalDays > 0 ? (myBalance.daysUsed / myBalance.totalDays) * 100 : 0;
+    const colors = usageColor(pct);
     return (
       <div className="space-y-5">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-slate-900">Mi Bolsa de Vacaciones</h3>
-            <span className="text-xs text-slate-500">Año {new Date().getFullYear()}</span>
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold ${colors.chip}`}>
+              {pct.toFixed(0)}% usado
+            </span>
           </div>
           <div className="grid grid-cols-3 gap-4 text-center mb-6">
             <div className="bg-slate-50 rounded-xl p-4">
@@ -1037,14 +1101,14 @@ const BolsaTab = ({ isAdmin, balances, myBalance, policies }) => {
               <p className="text-[10px] uppercase tracking-wider text-blue-600 font-semibold">Consumidos</p>
               <p className="text-3xl font-bold text-blue-700 mt-1">{myBalance.daysUsed}</p>
             </div>
-            <div className="bg-emerald-50 rounded-xl p-4">
-              <p className="text-[10px] uppercase tracking-wider text-emerald-600 font-semibold">Disponibles</p>
-              <p className="text-3xl font-bold text-emerald-700 mt-1">{myBalance.daysAvailable}</p>
+            <div className={`rounded-xl p-4 ring-1 ${colors.ring} ${colors.chip}`}>
+              <p className="text-[10px] uppercase tracking-wider font-semibold opacity-80">Disponibles</p>
+              <p className="text-3xl font-bold mt-1">{myBalance.daysAvailable}</p>
             </div>
           </div>
-          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
             <motion.div
-              className="h-full bg-gradient-to-r from-emerald-500 to-blue-500"
+              className={`h-full bg-gradient-to-r ${colors.bar}`}
               initial={{ width: 0 }}
               animate={{ width: `${pct}%` }}
               transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -1086,8 +1150,18 @@ const BolsaTab = ({ isAdmin, balances, myBalance, policies }) => {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-        <h3 className="font-semibold text-slate-900">Bolsa de Días — Empleados</h3>
-        <span className="text-xs text-slate-500">Año {new Date().getFullYear()}</span>
+        <div>
+          <h3 className="font-semibold text-slate-900">Bolsa de Días — Empleados</h3>
+          <p className="text-xs text-slate-500 mt-0.5">Año {new Date().getFullYear()} · Colores según % consumido</p>
+        </div>
+        <button
+          onClick={() => setShowWarning(true)}
+          className="inline-flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-800"
+          data-testid="nueva-bolsa-btn"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Nueva bolsa
+        </button>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full">
@@ -1099,20 +1173,21 @@ const BolsaTab = ({ isAdmin, balances, myBalance, policies }) => {
               <th className="px-5 py-3 font-medium">Consumidos</th>
               <th className="px-5 py-3 font-medium">Pendientes</th>
               <th className="px-5 py-3 font-medium">Disponibles</th>
-              <th className="px-5 py-3 font-medium">Progreso</th>
+              <th className="px-5 py-3 font-medium">Uso</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {balances.map((b) => {
               const pct = b.totalDays > 0 ? (b.daysUsed / b.totalDays) * 100 : 0;
+              const colors = usageColor(pct);
               return (
-                <tr key={b.employeeId} className="hover:bg-slate-50/60">
+                <tr key={b.employeeId} className="hover:bg-slate-50/60" data-testid={`balance-row-${b.employeeId}`}>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
-                      <img src={b.employeeAvatar} alt={b.employeeName} className="w-8 h-8 rounded-full bg-slate-100" />
+                      <img src={b.employeeAvatar} alt={b.employeeName} className="w-9 h-9 rounded-full bg-slate-100 object-cover ring-1 ring-slate-200" />
                       <div>
-                        <p className="text-sm font-medium text-slate-900">{b.employeeName}</p>
-                        <p className="text-xs text-slate-500">{b.employeeDepartment}</p>
+                        <p className="text-sm font-semibold text-slate-900">{b.employeeName}</p>
+                        <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">{empCode(b.employeeId)}</p>
                       </div>
                     </div>
                   </td>
@@ -1124,32 +1199,28 @@ const BolsaTab = ({ isAdmin, balances, myBalance, policies }) => {
                       {b.hireDate && <p className="text-[11px] text-slate-500">{b.hireDate}</p>}
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-sm font-medium text-slate-900">{b.totalDays}</td>
-                  <td className="px-5 py-3 text-sm text-blue-700">{b.daysUsed}</td>
-                  <td className="px-5 py-3 text-sm text-amber-700">{b.daysPending}</td>
+                  <td className="px-5 py-3 text-sm font-semibold text-slate-900">{b.totalDays}</td>
+                  <td className="px-5 py-3 text-sm text-blue-700 font-medium">{b.daysUsed}</td>
+                  <td className="px-5 py-3 text-sm text-amber-700 font-medium">{b.daysPending}</td>
                   <td className="px-5 py-3">
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                        b.daysAvailable <= 2
-                          ? 'bg-red-50 text-red-700'
-                          : b.daysAvailable <= 5
-                          ? 'bg-amber-50 text-amber-700'
-                          : 'bg-emerald-50 text-emerald-700'
-                      }`}
-                    >
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ring-1 ${colors.ring} ${colors.chip}`}>
                       {b.daysAvailable}
                     </span>
                   </td>
-                  <td className="px-5 py-3 w-32">
-                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-gradient-to-r from-emerald-500 to-blue-500"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${pct}%` }}
-                        transition={{ duration: 0.6, ease: 'easeOut' }}
-                      />
+                  <td className="px-5 py-3 w-40">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <motion.div
+                          className={`h-full bg-gradient-to-r ${colors.bar}`}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(pct, 100)}%` }}
+                          transition={{ duration: 0.6, ease: 'easeOut' }}
+                        />
+                      </div>
+                      <span className={`text-[11px] font-bold tabular-nums ${colors.icon} min-w-[38px] text-right`}>
+                        {pct.toFixed(0)}%
+                      </span>
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-1">{pct.toFixed(0)}%</p>
                   </td>
                 </tr>
               );
@@ -1157,7 +1228,223 @@ const BolsaTab = ({ isAdmin, balances, myBalance, policies }) => {
           </tbody>
         </table>
       </div>
+
+      {showWarning && (
+        <NewBalanceWarningModal
+          onCancel={() => setShowWarning(false)}
+          onContinue={() => {
+            setShowWarning(false);
+            setShowForm(true);
+          }}
+        />
+      )}
+      {showForm && (
+        <NewBalanceFormModal
+          employees={employees}
+          balances={balances}
+          onClose={() => setShowForm(false)}
+          onSaved={() => {
+            setShowForm(false);
+            onRefresh();
+          }}
+        />
+      )}
     </div>
+  );
+};
+
+// =============== NewBalanceWarningModal ===============
+
+const NewBalanceWarningModal = ({ onCancel, onContinue }) => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    onClick={onCancel}
+    data-testid="new-balance-warning"
+  >
+    <motion.div
+      initial={{ scale: 0.96 }}
+      animate={{ scale: 1 }}
+      onClick={(e) => e.stopPropagation()}
+      className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden"
+    >
+      <div className="px-6 pt-6 pb-2 flex items-start gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+          <AlertTriangle className="w-6 h-6 text-amber-600" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">Atención: crear bolsa manual</h3>
+          <p className="text-sm text-slate-500 mt-0.5">Esta funcionalidad está pensada para casos especiales.</p>
+        </div>
+      </div>
+      <div className="px-6 py-4 space-y-3">
+        <p className="text-sm text-slate-700">
+          El sistema gestiona automáticamente las bolsas de vacaciones por empleado según su antigüedad y las
+          políticas definidas. Solo deberías crear una bolsa manualmente en situaciones como:
+        </p>
+        <ul className="space-y-2 text-sm text-slate-700">
+          <li className="flex items-start gap-2">
+            <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+            <span>
+              <span className="font-semibold">Regularización manual:</span> empleados provenientes de contratos
+              anteriores o fusiones de empresas cuya antigüedad se respeta pero su saldo de vacaciones difiere del resto.
+            </span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+            <span>
+              <span className="font-semibold">Cierre y apertura anual:</span> en algunos países, al cerrar el año
+              natural (31 dic), la bolsa anterior caduca y se genera una nueva para el siguiente ejercicio.
+            </span>
+          </li>
+        </ul>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-800 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>Confirma que realmente necesitas crear una bolsa manualmente antes de continuar.</span>
+        </div>
+      </div>
+      <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium"
+          data-testid="new-balance-warning-cancel"
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={onContinue}
+          className="px-4 py-2 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+          data-testid="new-balance-warning-continue"
+        >
+          Entiendo, continuar
+        </button>
+      </div>
+    </motion.div>
+  </motion.div>
+);
+
+// =============== NewBalanceFormModal ===============
+
+const NewBalanceFormModal = ({ employees, balances, onClose, onSaved }) => {
+  const [form, setForm] = useState({
+    employeeId: '',
+    year: new Date().getFullYear(),
+    totalDays: 12,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    setError('');
+    if (!form.employeeId) {
+      setError('Selecciona un empleado');
+      return;
+    }
+    if (!form.totalDays || form.totalDays < 0) {
+      setError('Los días deben ser mayores o iguales a 0');
+      return;
+    }
+    setSaving(true);
+    try {
+      await vacationsAPI.adjustBalance(form.employeeId, {
+        year: Number(form.year),
+        totalDays: Number(form.totalDays),
+      });
+      onSaved();
+    } catch (e) {
+      setError(e.message || 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+      data-testid="new-balance-form"
+    >
+      <motion.div
+        initial={{ scale: 0.96 }}
+        animate={{ scale: 1 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+      >
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900">Nueva bolsa manual</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100">
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Empleado</label>
+            <select
+              value={form.employeeId}
+              onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              data-testid="new-balance-employee"
+            >
+              <option value="">— Selecciona —</option>
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name} · {e.department}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Año</label>
+              <input
+                type="number"
+                min={2000}
+                max={2100}
+                value={form.year}
+                onChange={(e) => setForm({ ...form, year: e.target.value })}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Días totales</label>
+              <input
+                type="number"
+                min={0}
+                value={form.totalDays}
+                onChange={(e) => setForm({ ...form, totalDays: e.target.value })}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+            </div>
+          </div>
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5"
+            data-testid="new-balance-save"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 };
 
@@ -1181,88 +1468,135 @@ const PoliciesTab = ({ policies, holidays, onRefresh }) => {
     onRefresh();
   };
 
+  // Orden por yearsFrom ascendente
+  const sortedPolicies = useMemo(
+    () => [...(policies || [])].sort((a, b) => (a.yearsFrom || 0) - (b.yearsFrom || 0)),
+    [policies]
+  );
+
   return (
     <div className="space-y-6">
-      {/* Policies card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-              <Settings className="w-4 h-4 text-slate-500" />
-              Políticas por antigüedad
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Define cuántos días otorgar según los años de antigüedad
-            </p>
-          </div>
+      {/* Policies header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Shield className="w-5 h-5 text-slate-500" />
+            Políticas por antigüedad
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Los colores representan la madurez: fresco → experimentado → senior
+          </p>
+        </div>
+        <button
+          onClick={() => setCreatingPolicy(true)}
+          className="inline-flex items-center gap-1.5 bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-slate-800 shadow-sm"
+          data-testid="new-policy-btn"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Nueva política
+        </button>
+      </div>
+
+      {/* Policies cards grid */}
+      {sortedPolicies.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
+          <Shield className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+          <p className="text-sm text-slate-500">No hay políticas definidas</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {sortedPolicies.map((p, i) => {
+            const palette = maturityPalette(p.yearsFrom);
+            return (
+              <motion.div
+                key={p.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: i * 0.05 }}
+                className={`relative bg-gradient-to-br ${palette.from} ${palette.to} rounded-2xl border ${palette.ring} ring-1 p-5 shadow-sm hover:shadow-md transition-shadow group`}
+                data-testid={`policy-card-${p.id}`}
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between mb-5">
+                  <div className={`w-11 h-11 rounded-xl ${palette.icon} flex items-center justify-center shadow-sm`}>
+                    <Shield className="w-5 h-5" />
+                  </div>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => setEditingPolicy(p)}
+                      className="p-1.5 rounded-lg bg-white/60 backdrop-blur text-slate-500 hover:text-slate-900"
+                      title="Editar"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeletePolicy(p.id)}
+                      className="p-1.5 rounded-lg bg-white/60 backdrop-blur text-slate-500 hover:text-red-600"
+                      title="Eliminar"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Title */}
+                <h4 className={`text-xl font-black ${palette.accent} leading-tight`}>
+                  {p.yearsFrom} a {p.yearsTo >= 999 ? '∞' : p.yearsTo} años
+                </h4>
+                <p className="text-[11px] text-slate-600 mt-1 uppercase tracking-wider font-medium">
+                  {p.name || palette.label}
+                </p>
+
+                {/* Divider */}
+                <div className="my-4 h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
+
+                {/* Description */}
+                {p.description && (
+                  <p className="text-xs text-slate-600 mb-4 italic line-clamp-2">
+                    {p.description}
+                  </p>
+                )}
+
+                {/* Días badge */}
+                <div className="flex items-end justify-between mt-3">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Días de ley</p>
+                    <div className="flex items-baseline gap-1 mt-0.5">
+                      <span className={`text-4xl font-black ${palette.accent}`}>{p.days}</span>
+                      <span className="text-sm text-slate-500 font-medium">días</span>
+                    </div>
+                  </div>
+                  <div className={`w-8 h-8 rounded-full ${palette.icon} flex items-center justify-center`}>
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                </div>
+
+                {/* Maturity bar */}
+                <div className="mt-4 h-1.5 bg-white/50 rounded-full overflow-hidden">
+                  <motion.div
+                    className={`h-full bg-gradient-to-r ${palette.barFrom} ${palette.barTo}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(((p.yearsFrom + 1) / 12) * 100, 100)}%` }}
+                    transition={{ duration: 0.8, ease: 'easeOut' }}
+                  />
+                </div>
+              </motion.div>
+            );
+          })}
+
+          {/* Add new card */}
           <button
             onClick={() => setCreatingPolicy(true)}
-            className="inline-flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-800"
+            className="rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-900 hover:bg-slate-50 transition-all p-5 flex flex-col items-center justify-center gap-2 min-h-[220px] text-slate-400 hover:text-slate-900"
+            data-testid="new-policy-card"
           >
-            <Plus className="w-3.5 h-3.5" />
-            Nueva política
+            <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center">
+              <Plus className="w-5 h-5" />
+            </div>
+            <span className="text-sm font-semibold">Nueva política</span>
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50/70 border-b border-slate-100">
-              <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
-                <th className="px-5 py-3 font-medium">Nombre</th>
-                <th className="px-5 py-3 font-medium">Desde (años)</th>
-                <th className="px-5 py-3 font-medium">Hasta (años)</th>
-                <th className="px-5 py-3 font-medium">Días</th>
-                <th className="px-5 py-3 font-medium">Descripción</th>
-                <th className="px-5 py-3 font-medium text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {policies.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-sm">
-                    No hay políticas definidas
-                  </td>
-                </tr>
-              ) : (
-                policies.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/60">
-                    <td className="px-5 py-3 text-sm font-medium text-slate-900">{p.name}</td>
-                    <td className="px-5 py-3 text-sm text-slate-700">{p.yearsFrom}</td>
-                    <td className="px-5 py-3 text-sm text-slate-700">
-                      {p.yearsTo >= 999 ? '∞' : p.yearsTo}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
-                        {p.days} días
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-xs text-slate-500 max-w-xs truncate">
-                      {p.description || '—'}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => setEditingPolicy(p)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-                          title="Editar"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeletePolicy(p.id)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
 
       {/* Holidays card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1665,6 +1999,7 @@ const VacationsView = () => {
   const [search, setSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [reviewing, setReviewing] = useState(null);
+  const [documentRequest, setDocumentRequest] = useState(null);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -1894,11 +2229,9 @@ const VacationsView = () => {
             <thead className="bg-slate-50/70 border-b border-slate-100">
               <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
                 <th className="px-5 py-3 font-medium">Empleado</th>
-                <th className="px-5 py-3 font-medium">Tipo</th>
-                <th className="px-5 py-3 font-medium">Desde</th>
-                <th className="px-5 py-3 font-medium">Hasta</th>
-                <th className="px-5 py-3 font-medium">Días</th>
-                <th className="px-5 py-3 font-medium">Regreso</th>
+                <th className="px-5 py-3 font-medium">Periodos</th>
+                <th className="px-5 py-3 font-medium">Días Totales</th>
+                <th className="px-5 py-3 font-medium">Fines de Sem.</th>
                 <th className="px-5 py-3 font-medium">Estado</th>
                 <th className="px-5 py-3 font-medium text-right">Acciones</th>
               </tr>
@@ -1906,13 +2239,13 @@ const VacationsView = () => {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-slate-400 text-sm">
+                  <td colSpan={6} className="px-5 py-12 text-center text-slate-400 text-sm">
                     Cargando solicitudes…
                   </td>
                 </tr>
               ) : filteredRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-slate-400 text-sm">
+                  <td colSpan={6} className="px-5 py-12 text-center text-slate-400 text-sm">
                     No hay solicitudes que coincidan con los filtros.
                   </td>
                 </tr>
@@ -1927,60 +2260,98 @@ const VacationsView = () => {
                       exit={{ opacity: 0, y: -8 }}
                       transition={{ duration: 0.25, delay: Math.min(idx * 0.025, 0.2) }}
                       className="hover:bg-slate-50/60"
+                      data-testid={`request-row-${r.id}`}
                     >
-                      <td className="px-5 py-3.5">
+                      <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <img
                             src={r.employeeAvatar}
                             alt={r.employeeName}
-                            className="w-9 h-9 rounded-full bg-slate-100 ring-1 ring-slate-200"
+                            className="w-10 h-10 rounded-full bg-slate-100 ring-1 ring-slate-200 object-cover"
                           />
                           <div>
-                            <p className="text-sm font-medium text-slate-900">{r.employeeName}</p>
-                            <p className="text-xs text-slate-500">{r.employeeDepartment}</p>
+                            <p className="text-sm font-semibold text-slate-900">{r.employeeName}</p>
+                            <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">
+                              {empCode(r.employeeId)}
+                            </p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5">
-                        <TypeChip type={r.type} />
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <div className="inline-flex items-center gap-2 text-sm text-slate-700">
+                          <CalendarDays className="w-4 h-4 text-slate-400" />
+                          <span className="font-medium">
+                            {r.startDate} <span className="text-slate-400">al</span> {r.endDate}
+                          </span>
+                        </div>
+                        <div className="mt-1">
+                          <TypeChip type={r.type} />
+                        </div>
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-slate-700 whitespace-nowrap">
-                        {formatDate(r.startDate)}
+                      <td className="px-5 py-4">
+                        <span className="text-base font-bold text-slate-900">{r.totalDays}</span>
+                        <span className="ml-1 text-xs text-slate-500">días</span>
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-slate-700 whitespace-nowrap">
-                        {formatDate(r.endDate)}
+                      <td className="px-5 py-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            r.countWeekends
+                              ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
+                              : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200'
+                          }`}
+                        >
+                          {r.countWeekends ? 'Incluidos' : 'Excluidos'}
+                        </span>
                       </td>
-                      <td className="px-5 py-3.5 text-sm font-semibold text-slate-900">{r.totalDays}</td>
-                      <td className="px-5 py-3.5 text-sm text-slate-500 whitespace-nowrap">
-                        {formatDate(r.returnDate)}
-                      </td>
-                      <td className="px-5 py-3.5">
+                      <td className="px-5 py-4">
                         <StatusBadge status={r.status} />
                       </td>
-                      <td className="px-5 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setDocumentRequest(r)}
+                            className="p-2 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition"
+                            title="Ver formato de vacaciones"
+                            data-testid={`action-doc-${r.id}`}
+                          >
+                            <FileText className="w-4 h-4" />
+                          </button>
                           {isAdmin && r.status === 'Pendiente' && (
+                            <>
+                              <button
+                                onClick={() => handleAction(r.id, { status: 'Aprobado', adminComment: '' })}
+                                className="p-2 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition"
+                                title="Aprobar"
+                                data-testid={`action-approve-${r.id}`}
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleAction(r.id, { status: 'Rechazado', adminComment: '' })}
+                                className="p-2 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition"
+                                title="Rechazar"
+                                data-testid={`action-reject-${r.id}`}
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                          {isAdmin && (
                             <button
                               onClick={() => setReviewing(r)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-medium hover:bg-slate-800"
+                              className="p-2 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition"
+                              title="Editar"
+                              data-testid={`action-edit-${r.id}`}
                             >
-                              Revisar
-                              <ChevronRight className="w-3.5 h-3.5" />
+                              <Pencil className="w-4 h-4" />
                             </button>
                           )}
-                          {isAdmin && r.status !== 'Pendiente' && (
-                            <button
-                              onClick={() => setReviewing(r)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-medium hover:bg-slate-50"
-                            >
-                              Detalle
-                            </button>
-                          )}
-                          {!isAdmin && r.status === 'Pendiente' && (
+                          {(isAdmin || (!isAdmin && r.status === 'Pendiente')) && (
                             <button
                               onClick={() => handleDelete(r.id)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
-                              title="Cancelar solicitud"
+                              className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                              title="Eliminar"
+                              data-testid={`action-delete-${r.id}`}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -2014,6 +2385,8 @@ const VacationsView = () => {
               balances={balances}
               myBalance={myBalance}
               policies={policies}
+              employees={employees}
+              onRefresh={fetchAll}
             />
           </motion.div>
         )}
@@ -2098,7 +2471,7 @@ const VacationsView = () => {
         </motion.div>
       )}
 
-      <RequestDrawer
+      <RequestModal
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onSubmit={handleCreate}
@@ -2117,6 +2490,14 @@ const VacationsView = () => {
           holidays={holidays}
           onClose={() => setReviewing(null)}
           onSave={handleSaveEdit}
+        />
+      )}
+
+      {documentRequest && (
+        <VacationDocument
+          request={documentRequest}
+          employee={employees.find((e) => e.id === documentRequest.employeeId)}
+          onClose={() => setDocumentRequest(null)}
         />
       )}
     </div>
