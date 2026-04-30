@@ -10,6 +10,7 @@ import KPIsView from './pages/KPIsView';
 import Evaluations360View from './pages/Evaluations360View';
 import PDIView from './pages/PDIView';
 import EmployeeProfile from './pages/EmployeeProfile';
+import VacationsView from './pages/VacationsView';
 import { 
   Users, 
   Target, 
@@ -70,6 +71,7 @@ import {
   LayoutGrid,
   List,
   AlertCircle,
+  CalendarDays,
   LogOut
 } from "lucide-react";
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, PieChart as RechartsPie, Pie, Cell } from 'recharts';
@@ -986,6 +988,7 @@ const Sidebar = ({ isAdmin, setIsAdmin }) => {
     { path: "/pdi", icon: Target, label: "PDI", description: "Plan de Desarrollo", roles: ['admin'] },
     { path: "/aciertos-desaciertos", icon: ClipboardList, label: "Aciertos y Desaciertos", description: "Evaluación bilateral", roles: ['admin'] },
     { path: "/kpis", icon: Target, label: "KPIs", description: "Indicadores clave", roles: ['admin'] },
+    { path: "/vacaciones", icon: CalendarDays, label: "Vacaciones", description: "Ausencias y permisos", roles: ['admin', 'empleado'] },
   ];
   
   // Filtrar navItems basado en el rol del usuario
@@ -1497,6 +1500,7 @@ const AppContent = () => {
             <Route path="/pdi" element={<PDIView isAdmin={isAdmin} />} />
             <Route path="/aciertos-desaciertos" element={<AciertosDesaciertosView isAdmin={isAdmin} />} />
             <Route path="/kpis" element={<KPIsView isAdmin={isAdmin} />} />
+            <Route path="/vacaciones" element={<VacationsView />} />
             <Route path="/my-profile" element={<MyProfileResultsView isAdmin={isAdmin} />} />
             <Route path="/manual-eval" element={<ManualEvaluation />} />
             <Route path="/perfil/:employeeId" element={<EmployeeProfile />} />

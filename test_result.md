@@ -190,6 +190,18 @@ frontend:
         comment: "Vista funcional en /evaluations con plantillas, enlaces públicos y funcionalidades completas"
 
 backend:
+  - task: "Módulo de Vacaciones y Ausencias - Backend API"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/routes/vacations.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implementado nuevo módulo HR. Endpoints: GET/POST /api/vacations (lista y creación con validación de fechas pasadas, startDate<=endDate, saldo suficiente, cálculo de totalDays excluyendo fines de semana, returnDate=siguiente día hábil). PATCH /api/vacations/{id}/status (admin: Aprobado/Rechazado/Justificado con comentario). DELETE /api/vacations/{id} (empleado puede cancelar pendientes propias). GET /api/vacations/balance/me, /balance/{employee_id}, /balances. PUT /api/vacations/balance/{id}/adjust. Justificado NO resta saldo, Aprobado SÍ resta (solo tipos Vacaciones/Asuntos Propios/Compensatorio). Lógica de auth: empleados solo ven y modifican lo suyo, admin/manager ve todo. Seed con 5 solicitudes de ejemplo y 8 balances."
+
   - task: "Backend FastAPI (INACTIVO)"
     implemented: true
     working: "NA"
@@ -210,15 +222,13 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Título 'Empleado A' reemplaza 'Matriz 9-Box'"
-    - "Porcentajes dentro de las celdas de la matriz 9-box"
-    - "Vista Perfil+Resultados fusionada"
-    - "UI para asignación de plantillas KPI"
-    - "Contadores de evaluadores"
+    - "Módulo de Vacaciones y Ausencias - Backend API"
   stuck_tasks: []
-  test_all: true
+  test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
     message: "Implementadas TODAS las correcciones del feedback del usuario (Mensaje 120). Cambios realizados: 1) Título 'Empleado A' reemplaza 'Matriz 9-Box' (NO reemplaza 'Jugador A' en categorías), 2) Porcentajes dentro de celdas 9-box, 3) Vista perfil+resultados fusionada con comparación de categoría calculada vs autoevaluación, 4) UI completa para asignación y evaluación de KPIs con pestañas, 5) Contadores de evaluadores con lógica Admin/Empleado. Frontend compila exitosamente. Screenshots preliminares muestran todo funcionando correctamente. Requiere testing completo de UI."
+  - agent: "main"
+    message: "FEATURE NUEVO: Módulo de Gestión de Vacaciones y Ausencias añadido. Backend en /app/backend/routes/vacations.py con CRUD, validaciones de fechas, cálculo de días laborables, balance por empleado. Frontend en /app/frontend/src/pages/VacationsView.jsx con KPI cards, tabla animada (framer-motion), drawer lateral para nuevas solicitudes y revisión admin, filtros por estado y nombre. Ruta /vacaciones, accesible para admin y empleado. Seed actualizado con 5 solicitudes ejemplo. Por favor probar SOLO los endpoints de /api/vacations: 1) Login admin (maria@empresa.com/maria123) y empleado (juan@empresa.com/juan123). 2) GET /api/vacations - admin ve todas, empleado ve solo las suyas. 3) POST /api/vacations - validar fechas pasadas, startDate>endDate, saldo insuficiente, totalDays calculado. 4) PATCH /api/vacations/{id}/status con Aprobado/Rechazado/Justificado y verificar que Aprobado resta del saldo y Justificado NO. 5) DELETE - empleado solo puede cancelar pendientes propias. 6) GET /api/vacations/balance/me y /balances."

@@ -392,6 +392,66 @@ export const pdiAPI = {
 };
 
 
+// Vacations API
+export const vacationsAPI = {
+  list: async (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.status && filters.status !== 'all') params.append('status', filters.status);
+    if (filters.employee_id && filters.employee_id !== 'all') params.append('employee_id', filters.employee_id);
+    if (filters.type && filters.type !== 'all') params.append('type', filters.type);
+    if (filters.search) params.append('search', filters.search);
+    const url = `${API_URL}/api/vacations${params.toString() ? '?' + params.toString() : ''}`;
+    const r = await fetch(url, { headers: getAuthHeaders() });
+    if (!r.ok) throw new Error('Failed to fetch vacation requests');
+    return r.json();
+  },
+  create: async (data) => {
+    const r = await fetch(`${API_URL}/api/vacations`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to create vacation request');
+    }
+    return r.json();
+  },
+  updateStatus: async (id, data) => {
+    const r = await fetch(`${API_URL}/api/vacations/${id}/status`, {
+      method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to update status');
+    }
+    return r.json();
+  },
+  delete: async (id) => {
+    const r = await fetch(`${API_URL}/api/vacations/${id}`, {
+      method: 'DELETE', headers: getAuthHeaders(),
+    });
+    if (!r.ok) throw new Error('Failed to delete request');
+    return r.json();
+  },
+  myBalance: async (year) => {
+    const url = `${API_URL}/api/vacations/balance/me${year ? '?year=' + year : ''}`;
+    const r = await fetch(url, { headers: getAuthHeaders() });
+    if (!r.ok) throw new Error('Failed to fetch my balance');
+    return r.json();
+  },
+  balances: async (year) => {
+    const url = `${API_URL}/api/vacations/balances${year ? '?year=' + year : ''}`;
+    const r = await fetch(url, { headers: getAuthHeaders() });
+    if (!r.ok) throw new Error('Failed to fetch balances');
+    return r.json();
+  },
+  employeeBalance: async (employeeId, year) => {
+    const url = `${API_URL}/api/vacations/balance/${employeeId}${year ? '?year=' + year : ''}`;
+    const r = await fetch(url, { headers: getAuthHeaders() });
+    if (!r.ok) throw new Error('Failed to fetch employee balance');
+    return r.json();
+  },
+};
+
 // Empleado A Evaluations API
 export const empleadoAAPI = {
   // Plans

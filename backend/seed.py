@@ -456,7 +456,120 @@ async def seed_database():
     await db.empleado_a_autoevaluaciones.insert_many(autoevaluaciones)
     print(f"✅ Created {len(autoevaluaciones)} autoevaluaciones")
 
-    
+    # Seed Vacation Balances + sample requests
+    print("Creating vacation balances and requests...")
+    await db.vacation_balances.delete_many({})
+    await db.vacation_requests.delete_many({})
+
+    from datetime import date as _date, timedelta as _td
+
+    current_year = datetime.now().year
+
+    # Helper local: count business days
+    def _bizdays(s, e):
+        n = 0
+        cur = s
+        while cur <= e:
+            if cur.weekday() < 5:
+                n += 1
+            cur += _td(days=1)
+        return n
+
+    def _next_biz(d):
+        cur = d + _td(days=1)
+        while cur.weekday() >= 5:
+            cur += _td(days=1)
+        return cur
+
+    balances = []
+    for emp in employees:
+        balances.append({
+            "employeeId": emp["id"],
+            "employeeName": emp["name"],
+            "employeeAvatar": emp["avatar"],
+            "employeeDepartment": emp["department"],
+            "year": current_year,
+            "totalDays": 12,
+            "daysUsed": 0,
+            "daysPending": 0,
+            "daysAvailable": 12,
+        })
+    await db.vacation_balances.insert_many(balances)
+
+    today = _date.today()
+    sample_requests = []
+
+    def _mk(emp_id, emp_name, emp_avatar, emp_dept, type_, start, end, status, reason, comment=None, days_offset_created=0):
+        td = _bizdays(start, end)
+        return {
+            "id": f"vac-{emp_id}-{start.strftime('%m%d')}",
+            "employeeId": emp_id,
+            "employeeName": emp_name,
+            "employeeAvatar": emp_avatar,
+            "employeeDepartment": emp_dept,
+            "type": type_,
+            "startDate": start.strftime("%Y-%m-%d"),
+            "endDate": end.strftime("%Y-%m-%d"),
+            "returnDate": _next_biz(end).strftime("%Y-%m-%d"),
+            "totalDays": td,
+            "status": status,
+            "reason": reason,
+            "adminComment": comment,
+            "attachmentUrl": None,
+            "createdAt": datetime.now() - _td(days=days_offset_created),
+            "reviewedAt": datetime.now() - _td(days=max(0, days_offset_created - 1)) if status != "Pendiente" else None,
+            "reviewedBy": "María García López" if status != "Pendiente" else None,
+        }
+
+    # Juan - Aprobado pasado (este año)
+    s = today + _td(days=15); e = s + _td(days=4)
+    sample_requests.append(_mk("2", "Juan Rodríguez",
+                               "https://api.dicebear.com/7.x/avataaars/svg?seed=Juan",
+                               "Desarrollo", "Vacaciones", s, e, "Aprobado",
+                               "Vacaciones de verano con la familia", "Aprobado, disfruta!", 5))
+
+    # Laura - Pendiente
+    s = today + _td(days=20); e = s + _td(days=2)
+    sample_requests.append(_mk("3", "Laura Sánchez",
+                               "https://api.dicebear.com/7.x/avataaars/svg?seed=Laura",
+                               "Ventas", "Asuntos Propios", s, e, "Pendiente",
+                               "Trámite personal", None, 1))
+
+    # Carlos - Justificado (enfermedad)
+    s = today + _td(days=2); e = s + _td(days=1)
+    sample_requests.append(_mk("4", "Carlos Mendoza",
+                               "https://api.dicebear.com/7.x/avataaars/svg?seed=Carlos",
+                               "Tecnología", "Enfermedad", s, e, "Justificado",
+                               "Reposo médico - gripe", "Comprobante recibido", 2))
+
+    # Ana - Rechazado
+    s = today + _td(days=10); e = s + _td(days=4)
+    sample_requests.append(_mk("5", "Ana Martínez",
+                               "https://api.dicebear.com/7.x/avataaars/svg?seed=Ana",
+                               "Tecnología", "Vacaciones", s, e, "Rechazado",
+                               "Viaje", "Coincide con cierre de sprint, replantear fechas", 3))
+
+    # Roberto - Pendiente compensatorio
+    s = today + _td(days=8); e = s
+    sample_requests.append(_mk("6", "Roberto Fernández",
+                               "https://api.dicebear.com/7.x/avataaars/svg?seed=Roberto",
+                               "Operaciones", "Compensatorio", s, e, "Pendiente",
+                               "Día compensatorio por trabajo en feriado", None, 0))
+
+    await db.vacation_requests.insert_many(sample_requests)
+
+    # Recalcular balances
+    for emp in employees:
+        approved = [r for r in sample_requests if r["employeeId"] == emp["id"] and r["status"] == "Aprobado" and r["type"] in {"Vacaciones", "Asuntos Propios", "Compensatorio"}]
+        pending = [r for r in sample_requests if r["employeeId"] == emp["id"] and r["status"] == "Pendiente" and r["type"] in {"Vacaciones", "Asuntos Propios", "Compensatorio"}]
+        used = sum(r["totalDays"] for r in approved)
+        pend = sum(r["totalDays"] for r in pending)
+        await db.vacation_balances.update_one(
+            {"employeeId": emp["id"], "year": current_year},
+            {"$set": {"daysUsed": used, "daysPending": pend, "daysAvailable": max(12 - used, 0)}}
+        )
+    print(f"✅ Created {len(balances)} vacation balances and {len(sample_requests)} requests")
+
     print("\n🎉 Database seeded successfully!")
     print("\n📝 Test Credentials:")
     print("   Admin: admin@empresa.com / admin123")
