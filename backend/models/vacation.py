@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, validator
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from datetime import datetime, date
 
 
@@ -18,6 +18,8 @@ class VacationRequest(BaseModel):
     endDate: str    # ISO date YYYY-MM-DD
     returnDate: str  # ISO date YYYY-MM-DD
     totalDays: int
+    selectedDays: Optional[List[str]] = None  # lista explícita de días ISO seleccionados
+    countWeekends: Optional[bool] = False
     status: VacationStatus = "Pendiente"
     reason: str = ""
     adminComment: Optional[str] = None
@@ -32,6 +34,8 @@ class VacationRequestCreate(BaseModel):
     type: VacationType
     startDate: str
     endDate: str
+    selectedDays: Optional[List[str]] = None
+    countWeekends: Optional[bool] = False
     reason: str = ""
     attachmentUrl: Optional[str] = None
 
@@ -39,6 +43,18 @@ class VacationRequestCreate(BaseModel):
 class VacationStatusUpdate(BaseModel):
     status: VacationStatus
     adminComment: Optional[str] = None
+
+
+class VacationRequestUpdate(BaseModel):
+    """Update completo (admin) - permite editar fechas, días, estado y comentario."""
+    type: Optional[VacationType] = None
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    selectedDays: Optional[List[str]] = None
+    countWeekends: Optional[bool] = None
+    status: Optional[VacationStatus] = None
+    adminComment: Optional[str] = None
+    reason: Optional[str] = None
 
 
 class VacationBalance(BaseModel):

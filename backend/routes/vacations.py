@@ -7,6 +7,7 @@ from models.vacation import (
     VacationRequest,
     VacationRequestCreate,
     VacationStatusUpdate,
+    VacationRequestUpdate,
     VacationBalance,
 )
 from middlewares.auth import (
@@ -255,19 +256,42 @@ async def create_request(
         if not employee_id:
             raise HTTPException(status_code=400, detail="Usuario no vinculado a un empleado")
 
-    # Validar fechas
-    start = parse_iso(data.startDate)
-    end = parse_iso(data.endDate)
     today = date.today()
+    count_weekends = bool(data.countWeekends)
 
-    if start < today:
-        raise HTTPException(status_code=400, detail="La fecha de inicio no puede ser en el pasado")
-    if end < start:
-        raise HTTPException(status_code=400, detail="La fecha de fin debe ser posterior o igual a la de inicio")
-
-    total_days = count_business_days(start, end)
-    if total_days <= 0:
-        raise HTTPException(status_code=400, detail="El rango debe incluir al menos un día laborable")
+    # Si vienen selectedDays, derivar startDate/endDate/totalDays de la lista
+    if data.selectedDays and len(data.selectedDays) > 0:
+        try:
+            parsed = sorted({parse_iso(d) for d in data.selectedDays})
+        except HTTPException:
+            raise
+        if not parsed:
+            raise HTTPException(status_code=400, detail="selectedDays inválidos")
+        if parsed[0] < today:
+            raise HTTPException(status_code=400, detail="Hay días seleccionados en el pasado")
+        if count_weekends:
+            total_days = len(parsed)
+        else:
+            total_days = sum(1 for d in parsed if d.weekday() < 5)
+            if total_days <= 0:
+                raise HTTPException(status_code=400, detail="Selecciona al menos un día laborable")
+        start = parsed[0]
+        end = parsed[-1]
+        selected_days_iso = [d.strftime("%Y-%m-%d") for d in parsed]
+    else:
+        # Validar fechas tradicionales
+        start = parse_iso(data.startDate)
+        end = parse_iso(data.endDate)
+        if start < today:
+            raise HTTPException(status_code=400, detail="La fecha de inicio no puede ser en el pasado")
+        if end < start:
+            raise HTTPException(status_code=400, detail="La fecha de fin debe ser posterior o igual a la de inicio")
+        total_days = count_business_days(start, end)
+        if count_weekends:
+            total_days = (end - start).days + 1
+        if total_days <= 0:
+            raise HTTPException(status_code=400, detail="El rango debe incluir al menos un día laborable")
+        selected_days_iso = None
 
     return_date = next_business_day(end)
 
@@ -292,10 +316,12 @@ async def create_request(
         "employeeAvatar": emp.get("avatar") if emp else None,
         "employeeDepartment": emp.get("department") if emp else None,
         "type": data.type,
-        "startDate": data.startDate,
-        "endDate": data.endDate,
+        "startDate": start.strftime("%Y-%m-%d"),
+        "endDate": end.strftime("%Y-%m-%d"),
         "returnDate": return_date.strftime("%Y-%m-%d"),
         "totalDays": total_days,
+        "selectedDays": selected_days_iso,
+        "countWeekends": count_weekends,
         "status": "Pendiente",
         "reason": data.reason or "",
         "adminComment": None,
@@ -307,6 +333,87 @@ async def create_request(
     await db.vacation_requests.insert_one(new_req.copy())
     await recompute_balance(employee_id, start.year)
     return new_req
+
+
+@router.patch("/{request_id}", response_model=VacationRequest)
+async def update_request(
+    request_id: str,
+    data: VacationRequestUpdate,
+    current_user: dict = Depends(require_manager_or_admin),
+):
+    """Actualiza una solicitud completa (admin): puede modificar fechas, días seleccionados,
+    estado, comentario y motivo. Recalcula balance del empleado."""
+    req = await db.vacation_requests.find_one({"id": request_id}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    update = {}
+    today = date.today()
+
+    new_type = data.type or req["type"]
+    count_weekends = data.countWeekends if data.countWeekends is not None else bool(req.get("countWeekends"))
+    update["countWeekends"] = count_weekends
+
+    # Si vienen días/fechas, recalcular
+    has_dates_change = (
+        data.selectedDays is not None or data.startDate is not None or data.endDate is not None
+    )
+    if has_dates_change:
+        if data.selectedDays is not None and len(data.selectedDays) > 0:
+            parsed = sorted({parse_iso(d) for d in data.selectedDays})
+            if not parsed:
+                raise HTTPException(status_code=400, detail="selectedDays inválidos")
+            if count_weekends:
+                total_days = len(parsed)
+            else:
+                total_days = sum(1 for d in parsed if d.weekday() < 5)
+                if total_days <= 0:
+                    raise HTTPException(status_code=400, detail="Selecciona al menos un día laborable")
+            start = parsed[0]
+            end = parsed[-1]
+            update["selectedDays"] = [d.strftime("%Y-%m-%d") for d in parsed]
+        else:
+            start_iso = data.startDate or req["startDate"]
+            end_iso = data.endDate or req["endDate"]
+            start = parse_iso(start_iso)
+            end = parse_iso(end_iso)
+            if end < start:
+                raise HTTPException(status_code=400, detail="endDate debe ser >= startDate")
+            total_days = count_business_days(start, end)
+            if count_weekends:
+                total_days = (end - start).days + 1
+            update["selectedDays"] = None
+
+        update["startDate"] = start.strftime("%Y-%m-%d")
+        update["endDate"] = end.strftime("%Y-%m-%d")
+        update["totalDays"] = total_days
+        update["returnDate"] = next_business_day(end).strftime("%Y-%m-%d")
+
+    if data.type is not None:
+        update["type"] = data.type
+    if data.reason is not None:
+        update["reason"] = data.reason
+    if data.adminComment is not None:
+        update["adminComment"] = data.adminComment
+    if data.status is not None:
+        update["status"] = data.status
+        update["reviewedAt"] = datetime.now()
+        update["reviewedBy"] = current_user.get("name") or current_user.get("email")
+
+    if not update:
+        raise HTTPException(status_code=400, detail="Sin cambios")
+
+    await db.vacation_requests.update_one({"id": request_id}, {"$set": update})
+
+    # Recompute balance del año afectado
+    try:
+        s = parse_iso(update.get("startDate", req["startDate"]))
+        await recompute_balance(req["employeeId"], s.year)
+    except Exception:
+        pass
+
+    updated = await db.vacation_requests.find_one({"id": request_id}, {"_id": 0})
+    return await enrich_request(updated)
 
 
 @router.patch("/{request_id}/status", response_model=VacationRequest)

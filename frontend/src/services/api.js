@@ -415,6 +415,16 @@ export const vacationsAPI = {
     }
     return r.json();
   },
+  update: async (id, data) => {
+    const r = await fetch(`${API_URL}/api/vacations/${id}`, {
+      method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to update request');
+    }
+    return r.json();
+  },
   updateStatus: async (id, data) => {
     const r = await fetch(`${API_URL}/api/vacations/${id}/status`, {
       method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify(data),
