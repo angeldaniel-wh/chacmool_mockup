@@ -66,12 +66,24 @@ Sistema web de evaluación de empleados basado en la lógica real del cliente Wi
 ## Módulo Vacaciones y Ausencias (Feb 2026)
 - [x] CRUD de solicitudes con estados Pendiente/Aprobado/Justificado/Rechazado
 - [x] Calendario interactivo multi-selección de días (Calendar360)
-- [x] Sub-pestañas: Solicitudes / Bolsa de días / Políticas
+- [x] Sub-pestañas: Solicitudes / Bolsa de días / Sugeridas / Políticas
 - [x] Políticas por antigüedad + Festivos (admin)
 - [x] Bolsa de días automática según antigüedad y políticas
 - [x] Modal de edición admin con cálculo de saldo restante
-- [x] **[Feb 2026]** Validación de bolsa en calendario: bloqueo de selección al exceder días disponibles, con aviso visual y botón de envío deshabilitado
-- [x] **[Feb 2026]** Fix: prop `holidays` en EditRequestModal
+- [x] Validación de bolsa en calendario con bloqueo de selección
+- [x] Modal centrado "Nueva Solicitud" (no drawer lateral)
+- [x] Tabla Solicitudes rediseñada (EMP-XXX, Periodos, Días, Fines Sem, Estado, Acciones con icono doc/approve/reject/edit/trash)
+- [x] VacationDocument: formato oficial A4 imprimible con firmas (Empleado/Gerencia/Director)
+- [x] Bolsa admin con colores según uso (verde→rojo)
+- [x] Políticas como tarjetas con gradientes de madurez
+- [x] Nueva bolsa con modal de advertencia (casos especiales)
+- [x] **[Feb 2026]** Eliminadas KPI cards de Solicitudes
+- [x] **[Feb 2026]** Sistema de notificaciones proactivas de renovación (urgente/próximo/cercano/lejano) basado en hireDate
+- [x] **[Feb 2026]** Bolsa admin ordenada por proximidad de renovación + filtros por nivel + búsqueda
+- [x] **[Feb 2026]** Barra semáforo de uso (verde → amarillo → naranja → rojo)
+- [x] **[Feb 2026]** Alerta proactiva en vista empleado para renovación próxima
+- [x] **[Feb 2026]** Nueva tab "Sugeridas" — CRUD de rangos predefinidos con color + calendario
+- [x] **[Feb 2026]** Select "Vacaciones sugeridas" en modal de Nueva Solicitud que autopobla días
 
 ## Backlog
 - [ ] Notificaciones por email al aprobar/rechazar

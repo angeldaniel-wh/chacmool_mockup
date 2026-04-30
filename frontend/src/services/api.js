@@ -538,6 +538,39 @@ export const vacationHolidaysAPI = {
   },
 };
 
+// Vacation Suggested Ranges API
+export const vacationSuggestedAPI = {
+  list: async () => {
+    const r = await fetch(`${API_URL}/api/vacation-suggested-ranges`, { headers: getAuthHeaders() });
+    if (!r.ok) throw new Error('Failed to fetch suggested ranges');
+    return r.json();
+  },
+  create: async (data) => {
+    const r = await fetch(`${API_URL}/api/vacation-suggested-ranges`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to create suggested range');
+    }
+    return r.json();
+  },
+  update: async (id, data) => {
+    const r = await fetch(`${API_URL}/api/vacation-suggested-ranges/${id}`, {
+      method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!r.ok) throw new Error('Failed to update suggested range');
+    return r.json();
+  },
+  delete: async (id) => {
+    const r = await fetch(`${API_URL}/api/vacation-suggested-ranges/${id}`, {
+      method: 'DELETE', headers: getAuthHeaders(),
+    });
+    if (!r.ok) throw new Error('Failed to delete suggested range');
+    return r.json();
+  },
+};
+
 // Empleado A Evaluations API
 export const empleadoAAPI = {
   // Plans

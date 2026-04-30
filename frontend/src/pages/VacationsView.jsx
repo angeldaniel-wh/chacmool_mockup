@@ -31,9 +31,14 @@ import {
   ListChecks,
   Shield,
   Sparkles,
+  Bell,
+  CalendarClock,
+  CalendarRange,
+  RefreshCw,
+  ArrowUpRight,
   Wallet as WalletIcon,
 } from 'lucide-react';
-import { vacationsAPI, employeesAPI, vacationPoliciesAPI, vacationHolidaysAPI } from '../services/api';
+import { vacationsAPI, employeesAPI, vacationPoliciesAPI, vacationHolidaysAPI, vacationSuggestedAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import VacationDocument from '../components/VacationDocument';
 
@@ -126,6 +131,53 @@ const maturityPalette = (yearsFrom) => {
   };
 };
 
+// --- Renewal prediction (a partir de hireDate) ---
+const computeRenewal = (hireDateISO) => {
+  if (!hireDateISO) return null;
+  const hire = new Date(hireDateISO + 'T00:00:00');
+  if (isNaN(hire)) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let next = new Date(today.getFullYear(), hire.getMonth(), hire.getDate());
+  if (next < today) next = new Date(today.getFullYear() + 1, hire.getMonth(), hire.getDate());
+  const diffMs = next - today;
+  const days = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  const iso = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+  return { days, date: iso };
+};
+
+const renewalLevel = (days) => {
+  if (days == null) return 'none';
+  if (days <= 30) return 'urgent';
+  if (days <= 60) return 'soon';
+  if (days <= 90) return 'upcoming';
+  return 'far';
+};
+
+const renewalStyle = (level) => {
+  switch (level) {
+    case 'urgent':
+      return { chip: 'bg-red-100 text-red-700 ring-1 ring-red-200', dot: 'bg-red-500', icon: 'text-red-600', label: 'Urgente' };
+    case 'soon':
+      return { chip: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200', dot: 'bg-amber-500', icon: 'text-amber-600', label: 'Próxima' };
+    case 'upcoming':
+      return { chip: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200', dot: 'bg-blue-500', icon: 'text-blue-600', label: 'Cercana' };
+    case 'far':
+      return { chip: 'bg-slate-100 text-slate-600 ring-1 ring-slate-200', dot: 'bg-slate-400', icon: 'text-slate-500', label: 'Lejana' };
+    default:
+      return { chip: 'bg-slate-100 text-slate-500', dot: 'bg-slate-300', icon: 'text-slate-400', label: '—' };
+  }
+};
+
+// Semáforo de progreso (verde → amarillo → naranja → rojo) según % consumido
+const semaphoreBar = (pct) => {
+  if (pct >= 90) return { bar: 'from-red-500 to-red-600', text: 'text-red-700' };
+  if (pct >= 70) return { bar: 'from-orange-400 to-red-500', text: 'text-orange-700' };
+  if (pct >= 50) return { bar: 'from-yellow-400 to-orange-400', text: 'text-yellow-700' };
+  if (pct >= 25) return { bar: 'from-lime-400 to-yellow-400', text: 'text-lime-700' };
+  return { bar: 'from-emerald-400 to-lime-400', text: 'text-emerald-700' };
+};
+
 const TYPE_META = {
   Vacaciones: { icon: Coffee, color: 'text-emerald-600 bg-emerald-50' },
   Enfermedad: { icon: Stethoscope, color: 'text-rose-600 bg-rose-50' },
@@ -184,7 +236,7 @@ const TypeChip = ({ type }) => {
 
 // =============== Modal: New Request ===============
 
-const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmployeeId, balance, balances = [], holidays }) => {
+const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmployeeId, balance, balances = [], holidays, suggestedRanges = [] }) => {
   const [form, setForm] = useState({
     employeeId: currentEmployeeId || '',
     type: 'Vacaciones',
@@ -392,6 +444,37 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
                   })}
                 </div>
               </div>
+
+              {/* Rangos Sugeridos */}
+              {suggestedRanges.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                    Vacaciones sugeridas (opcional)
+                  </label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const rng = suggestedRanges.find((r) => r.id === e.target.value);
+                      if (!rng) return;
+                      // Construir arreglo de días laborables entre start y end
+                      const days = buildSelectedDaysFromRange(rng.startDate, rng.endDate, form.countWeekends);
+                      handleCalendarChange(days);
+                    }}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white"
+                    data-testid="suggested-range-select"
+                  >
+                    <option value="">— Elige un rango preconfigurado —</option>
+                    {suggestedRanges.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} · {r.startDate} → {r.endDate}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Al elegir un rango, se auto-seleccionan los días en el calendario.
+                  </p>
+                </div>
+              )}
 
               {/* Calendario */}
               <div>
@@ -1079,16 +1162,90 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
 const BolsaTab = ({ isAdmin, balances, myBalance, policies, employees, onRefresh }) => {
   const [showWarning, setShowWarning] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState('');
+  const [renewalFilter, setRenewalFilter] = useState('all'); // all | urgent | soon | upcoming | far
 
+  // Enriquecer con days to renewal (siempre, independiente del rol para no romper hooks)
+  const enriched = useMemo(() => {
+    return (balances || []).map((b) => {
+      const r = computeRenewal(b.hireDate);
+      return {
+        ...b,
+        renewalDays: r ? r.days : null,
+        renewalDate: r ? r.date : null,
+        renewalLevel: r ? renewalLevel(r.days) : 'none',
+      };
+    });
+  }, [balances]);
+
+  // Aplicar filtros + orden por proximidad
+  const filtered = useMemo(() => {
+    let out = [...enriched];
+    if (search) {
+      const q = search.toLowerCase();
+      out = out.filter(
+        (b) =>
+          (b.employeeName || '').toLowerCase().includes(q) ||
+          (b.employeeDepartment || '').toLowerCase().includes(q) ||
+          empCode(b.employeeId).toLowerCase().includes(q)
+      );
+    }
+    if (renewalFilter !== 'all') {
+      out = out.filter((b) => b.renewalLevel === renewalFilter);
+    }
+    out.sort((a, b) => {
+      if (a.renewalDays == null && b.renewalDays == null) return 0;
+      if (a.renewalDays == null) return 1;
+      if (b.renewalDays == null) return -1;
+      return a.renewalDays - b.renewalDays;
+    });
+    return out;
+  }, [enriched, search, renewalFilter]);
+
+  // Empleado view
   if (!isAdmin && myBalance) {
     const pct = myBalance.totalDays > 0 ? (myBalance.daysUsed / myBalance.totalDays) * 100 : 0;
-    const colors = usageColor(pct);
+    const sem = semaphoreBar(pct);
+    const renew = computeRenewal(myBalance.hireDate);
+    const level = renew ? renewalLevel(renew.days) : 'none';
+    const rStyle = renewalStyle(level);
+
     return (
       <div className="space-y-5">
+        {/* Alerta de renovación proactiva */}
+        {renew && (level === 'urgent' || level === 'soon') && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`rounded-2xl border p-4 flex items-start gap-3 ${
+              level === 'urgent'
+                ? 'bg-red-50 border-red-200'
+                : 'bg-amber-50 border-amber-200'
+            }`}
+            data-testid="renewal-alert"
+          >
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${rStyle.chip}`}>
+              <Bell className="w-5 h-5" />
+            </div>
+            <div className="flex-1">
+              <p className={`text-sm font-bold ${level === 'urgent' ? 'text-red-800' : 'text-amber-800'}`}>
+                {level === 'urgent'
+                  ? '¡Tu bolsa se renueva muy pronto!'
+                  : 'Tu bolsa se renovará próximamente'}
+              </p>
+              <p className="text-xs text-slate-600 mt-0.5">
+                En <span className="font-bold">{renew.days} día{renew.days === 1 ? '' : 's'}</span>
+                {' '}({renew.date}) comenzará tu nuevo ciclo. Aprovecha los{' '}
+                <span className="font-bold">{myBalance.daysAvailable} días disponibles</span> antes de la renovación.
+              </p>
+            </div>
+          </motion.div>
+        )}
+
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-slate-900">Mi Bolsa de Vacaciones</h3>
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold ${colors.chip}`}>
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold ${sem.text} bg-white ring-1 ring-slate-200`}>
               {pct.toFixed(0)}% usado
             </span>
           </div>
@@ -1101,22 +1258,56 @@ const BolsaTab = ({ isAdmin, balances, myBalance, policies, employees, onRefresh
               <p className="text-[10px] uppercase tracking-wider text-blue-600 font-semibold">Consumidos</p>
               <p className="text-3xl font-bold text-blue-700 mt-1">{myBalance.daysUsed}</p>
             </div>
-            <div className={`rounded-xl p-4 ring-1 ${colors.ring} ${colors.chip}`}>
-              <p className="text-[10px] uppercase tracking-wider font-semibold opacity-80">Disponibles</p>
-              <p className="text-3xl font-bold mt-1">{myBalance.daysAvailable}</p>
+            <div className="bg-emerald-50 rounded-xl p-4 ring-1 ring-emerald-200">
+              <p className="text-[10px] uppercase tracking-wider text-emerald-600 font-semibold">Disponibles</p>
+              <p className="text-3xl font-bold text-emerald-700 mt-1">{myBalance.daysAvailable}</p>
             </div>
           </div>
-          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+
+          {/* Barra semáforo grande */}
+          <div className="relative h-3 bg-slate-100 rounded-full overflow-hidden ring-1 ring-slate-200">
             <motion.div
-              className={`h-full bg-gradient-to-r ${colors.bar}`}
+              className={`h-full bg-gradient-to-r ${sem.bar} rounded-full`}
               initial={{ width: 0 }}
-              animate={{ width: `${pct}%` }}
-              transition={{ duration: 0.6, ease: 'easeOut' }}
+              animate={{ width: `${Math.min(pct, 100)}%` }}
+              transition={{ duration: 0.7, ease: 'easeOut' }}
             />
+            {/* Marcas de semáforo */}
+            <div className="absolute inset-0 flex justify-between items-center px-[1%] pointer-events-none">
+              {[25, 50, 70, 90].map((m) => (
+                <span key={m} className="w-px h-3 bg-white/60" style={{ position: 'absolute', left: `${m}%` }} />
+              ))}
+            </div>
           </div>
-          <p className="text-xs text-slate-500 mt-2">
+          <div className="mt-2 flex items-center justify-between text-[11px] uppercase tracking-wider font-semibold">
+            <span className="text-emerald-600">● Bajo</span>
+            <span className="text-yellow-600">● Moderado</span>
+            <span className="text-orange-600">● Alto</span>
+            <span className="text-red-600">● Crítico</span>
+          </div>
+          <p className="text-xs text-slate-500 mt-3">
             Has consumido {myBalance.daysUsed} de {myBalance.totalDays} días ({pct.toFixed(0)}%)
           </p>
+
+          {/* Renovación */}
+          {renew && (
+            <div className="mt-5 pt-5 border-t border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${rStyle.chip}`}>
+                  <CalendarClock className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Próxima renovación</p>
+                  <p className="text-sm font-bold text-slate-900">
+                    {renew.date} · <span className={rStyle.icon}>{renew.days} días</span>
+                  </p>
+                </div>
+              </div>
+              <span className={`text-xs font-bold px-3 py-1 rounded-full ${rStyle.chip}`}>
+                {rStyle.label}
+              </span>
+            </div>
+          )}
 
           {myBalance.seniorityYears != null && (
             <div className="mt-5 pt-5 border-t border-slate-200 flex items-center justify-between">
@@ -1146,87 +1337,200 @@ const BolsaTab = ({ isAdmin, balances, myBalance, policies, employees, onRefresh
     );
   }
 
-  // Admin view - tabla completa
+  // Admin view (enriched/filtered calculados arriba)
+
+  const urgentCount = enriched.filter((b) => b.renewalLevel === 'urgent').length;
+  const soonCount = enriched.filter((b) => b.renewalLevel === 'soon').length;
+
+  const RENEWAL_FILTERS = [
+    { key: 'all', label: 'Todos', count: enriched.length, cls: 'bg-slate-900 text-white' },
+    { key: 'urgent', label: 'Urgentes', count: urgentCount, cls: 'bg-red-100 text-red-700' },
+    { key: 'soon', label: 'Próximos', count: soonCount, cls: 'bg-amber-100 text-amber-700' },
+    { key: 'upcoming', label: 'Cercanos', count: enriched.filter((b) => b.renewalLevel === 'upcoming').length, cls: 'bg-blue-100 text-blue-700' },
+    { key: 'far', label: 'Lejanos', count: enriched.filter((b) => b.renewalLevel === 'far').length, cls: 'bg-slate-100 text-slate-600' },
+  ];
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold text-slate-900">Bolsa de Días — Empleados</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Año {new Date().getFullYear()} · Colores según % consumido</p>
-        </div>
-        <button
-          onClick={() => setShowWarning(true)}
-          className="inline-flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-800"
-          data-testid="nueva-bolsa-btn"
+    <div className="space-y-5">
+      {/* Notificación proactiva admin */}
+      {(urgentCount + soonCount) > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-amber-50 to-rose-50 rounded-2xl border border-amber-200 p-4 flex items-start gap-3"
+          data-testid="admin-renewal-alert"
         >
-          <Plus className="w-3.5 h-3.5" />
-          Nueva bolsa
-        </button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-slate-50/70 border-b border-slate-100">
-            <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
-              <th className="px-5 py-3 font-medium">Empleado</th>
-              <th className="px-5 py-3 font-medium">Antigüedad</th>
-              <th className="px-5 py-3 font-medium">Total</th>
-              <th className="px-5 py-3 font-medium">Consumidos</th>
-              <th className="px-5 py-3 font-medium">Pendientes</th>
-              <th className="px-5 py-3 font-medium">Disponibles</th>
-              <th className="px-5 py-3 font-medium">Uso</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {balances.map((b) => {
-              const pct = b.totalDays > 0 ? (b.daysUsed / b.totalDays) * 100 : 0;
-              const colors = usageColor(pct);
+          <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+            <Bell className="w-5 h-5" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-slate-900">
+              {urgentCount > 0 && (
+                <>
+                  <span className="text-red-700">{urgentCount}</span> empleado{urgentCount === 1 ? '' : 's'} con renovación urgente
+                </>
+              )}
+              {urgentCount > 0 && soonCount > 0 && ' · '}
+              {soonCount > 0 && (
+                <>
+                  <span className="text-amber-700">{soonCount}</span> con renovación próxima
+                </>
+              )}
+            </p>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Recuerda recordar a estos empleados que disfruten de sus días disponibles antes del cierre de su ciclo.
+            </p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Filters & actions */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+          <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
+            <Filter className="w-4 h-4" />
+            Filtros de renovación:
+          </div>
+          <div className="flex flex-wrap gap-2 flex-1">
+            {RENEWAL_FILTERS.map((f) => {
+              const active = renewalFilter === f.key;
               return (
-                <tr key={b.employeeId} className="hover:bg-slate-50/60" data-testid={`balance-row-${b.employeeId}`}>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-3">
-                      <img src={b.employeeAvatar} alt={b.employeeName} className="w-9 h-9 rounded-full bg-slate-100 object-cover ring-1 ring-slate-200" />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{b.employeeName}</p>
-                        <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">{empCode(b.employeeId)}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3">
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">
-                        {b.seniorityYears != null ? `${Math.floor(b.seniorityYears)} años` : '—'}
-                      </p>
-                      {b.hireDate && <p className="text-[11px] text-slate-500">{b.hireDate}</p>}
-                    </div>
-                  </td>
-                  <td className="px-5 py-3 text-sm font-semibold text-slate-900">{b.totalDays}</td>
-                  <td className="px-5 py-3 text-sm text-blue-700 font-medium">{b.daysUsed}</td>
-                  <td className="px-5 py-3 text-sm text-amber-700 font-medium">{b.daysPending}</td>
-                  <td className="px-5 py-3">
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ring-1 ${colors.ring} ${colors.chip}`}>
-                      {b.daysAvailable}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 w-40">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                        <motion.div
-                          className={`h-full bg-gradient-to-r ${colors.bar}`}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(pct, 100)}%` }}
-                          transition={{ duration: 0.6, ease: 'easeOut' }}
-                        />
-                      </div>
-                      <span className={`text-[11px] font-bold tabular-nums ${colors.icon} min-w-[38px] text-right`}>
-                        {pct.toFixed(0)}%
-                      </span>
-                    </div>
-                  </td>
-                </tr>
+                <button
+                  key={f.key}
+                  onClick={() => setRenewalFilter(f.key)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                    active ? f.cls + ' shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                  data-testid={`renewal-filter-${f.key}`}
+                >
+                  {f.label}
+                  <span className={`inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full text-[10px] font-bold ${
+                    active ? 'bg-white/25' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {f.count}
+                  </span>
+                </button>
               );
             })}
-          </tbody>
-        </table>
+          </div>
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Buscar empleado, depto, código…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full lg:w-72 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              data-testid="bolsa-search"
+            />
+          </div>
+          <button
+            onClick={() => setShowWarning(true)}
+            className="inline-flex items-center gap-1.5 bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-slate-800 shadow-sm"
+            data-testid="nueva-bolsa-btn"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Nueva bolsa
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="font-semibold text-slate-900 text-sm">
+            Bolsa de Días — ordenada por proximidad de renovación
+          </h3>
+          <span className="text-xs text-slate-500">Año {new Date().getFullYear()} · {filtered.length} / {enriched.length}</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50/70 border-b border-slate-100">
+              <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                <th className="px-5 py-3 font-medium">Empleado</th>
+                <th className="px-5 py-3 font-medium">Renueva en</th>
+                <th className="px-5 py-3 font-medium">Antigüedad</th>
+                <th className="px-5 py-3 font-medium">Total</th>
+                <th className="px-5 py-3 font-medium">Usados</th>
+                <th className="px-5 py-3 font-medium">Pendientes</th>
+                <th className="px-5 py-3 font-medium">Disponibles</th>
+                <th className="px-5 py-3 font-medium">Uso (semáforo)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">
+                    Sin resultados con estos filtros
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((b) => {
+                  const pct = b.totalDays > 0 ? (b.daysUsed / b.totalDays) * 100 : 0;
+                  const sem = semaphoreBar(pct);
+                  const rStyle = renewalStyle(b.renewalLevel);
+                  return (
+                    <tr key={b.employeeId} className="hover:bg-slate-50/60" data-testid={`balance-row-${b.employeeId}`}>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <img src={b.employeeAvatar} alt={b.employeeName} className="w-9 h-9 rounded-full bg-slate-100 object-cover ring-1 ring-slate-200" />
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{b.employeeName}</p>
+                            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">{empCode(b.employeeId)}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        {b.renewalDays != null ? (
+                          <div className="flex flex-col gap-1">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${rStyle.chip} w-fit`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${rStyle.dot}`} />
+                              {b.renewalDays} día{b.renewalDays === 1 ? '' : 's'}
+                            </span>
+                            <span className="text-[10px] text-slate-400">{b.renewalDate}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">
+                            {b.seniorityYears != null ? `${Math.floor(b.seniorityYears)} años` : '—'}
+                          </p>
+                          {b.hireDate && <p className="text-[11px] text-slate-500">{b.hireDate}</p>}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-sm font-semibold text-slate-900">{b.totalDays}</td>
+                      <td className="px-5 py-3 text-sm text-blue-700 font-medium">{b.daysUsed}</td>
+                      <td className="px-5 py-3 text-sm text-amber-700 font-medium">{b.daysPending}</td>
+                      <td className="px-5 py-3">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                          {b.daysAvailable}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 w-52">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <motion.div
+                              className={`h-full bg-gradient-to-r ${sem.bar}`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${Math.min(pct, 100)}%` }}
+                              transition={{ duration: 0.6, ease: 'easeOut' }}
+                            />
+                          </div>
+                          <span className={`text-[11px] font-bold tabular-nums ${sem.text} min-w-[38px] text-right`}>
+                            {pct.toFixed(0)}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showWarning && (
@@ -1980,6 +2284,337 @@ const HolidayEditModal = ({ holiday, onClose, onSave }) => {
   );
 };
 
+// =============== SugeridasTab (Rangos sugeridos) ===============
+
+const rangeColorPalette = {
+  slate: { from: 'from-slate-100', to: 'to-white', ring: 'ring-slate-200', icon: 'bg-slate-100 text-slate-700', accent: 'text-slate-900' },
+  emerald: { from: 'from-emerald-100', to: 'to-white', ring: 'ring-emerald-200', icon: 'bg-emerald-100 text-emerald-700', accent: 'text-emerald-800' },
+  blue: { from: 'from-blue-100', to: 'to-white', ring: 'ring-blue-200', icon: 'bg-blue-100 text-blue-700', accent: 'text-blue-800' },
+  amber: { from: 'from-amber-100', to: 'to-white', ring: 'ring-amber-200', icon: 'bg-amber-100 text-amber-700', accent: 'text-amber-800' },
+  rose: { from: 'from-rose-100', to: 'to-white', ring: 'ring-rose-200', icon: 'bg-rose-100 text-rose-700', accent: 'text-rose-800' },
+  violet: { from: 'from-violet-100', to: 'to-white', ring: 'ring-violet-200', icon: 'bg-violet-100 text-violet-700', accent: 'text-violet-800' },
+};
+
+const SugeridasTab = ({ ranges, holidays, isAdmin, onRefresh }) => {
+  const [editing, setEditing] = useState(null);
+  const [creating, setCreating] = useState(false);
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este rango sugerido?')) return;
+    await vacationSuggestedAPI.delete(id);
+    onRefresh();
+  };
+
+  const businessDaysCount = (startIso, endIso) => {
+    const arr = buildSelectedDaysFromRange(startIso, endIso, false);
+    return arr.length;
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <CalendarRange className="w-5 h-5 text-slate-500" />
+            Vacaciones sugeridas
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Rangos preconfigurados que los empleados pueden aplicar al crear una solicitud
+          </p>
+        </div>
+        {isAdmin && (
+          <button
+            onClick={() => setCreating(true)}
+            className="inline-flex items-center gap-1.5 bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-slate-800 shadow-sm"
+            data-testid="new-suggested-btn"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Nuevo rango
+          </button>
+        )}
+      </div>
+
+      {ranges.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
+          <CalendarRange className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+          <p className="text-sm text-slate-500">No hay rangos sugeridos aún</p>
+          {isAdmin && (
+            <button
+              onClick={() => setCreating(true)}
+              className="mt-3 inline-flex items-center gap-1.5 bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-slate-800"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Crear el primero
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {ranges.map((r, i) => {
+            const palette = rangeColorPalette[r.color] || rangeColorPalette.slate;
+            const dias = businessDaysCount(r.startDate, r.endDate);
+            return (
+              <motion.div
+                key={r.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.04 }}
+                className={`group relative bg-gradient-to-br ${palette.from} ${palette.to} rounded-2xl border ${palette.ring} ring-1 p-5 shadow-sm hover:shadow-md transition-shadow`}
+                data-testid={`suggested-card-${r.id}`}
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className={`w-11 h-11 rounded-xl ${palette.icon} flex items-center justify-center shadow-sm`}>
+                    <CalendarClock className="w-5 h-5" />
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => setEditing(r)}
+                        className="p-1.5 rounded-lg bg-white/70 backdrop-blur text-slate-500 hover:text-slate-900"
+                        title="Editar"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(r.id)}
+                        className="p-1.5 rounded-lg bg-white/70 backdrop-blur text-slate-500 hover:text-red-600"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <h4 className={`text-lg font-black ${palette.accent}`}>{r.name}</h4>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {r.startDate} <span className="text-slate-400">→</span> {r.endDate}
+                </p>
+                {r.description && (
+                  <p className="text-xs text-slate-600 mt-3 italic line-clamp-2">{r.description}</p>
+                )}
+                <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                    Días laborables
+                  </span>
+                  <span className={`text-base font-black ${palette.accent}`}>{dias}</span>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      {(editing || creating) && (
+        <SuggestedEditModal
+          range={editing}
+          holidays={holidays}
+          onClose={() => {
+            setEditing(null);
+            setCreating(false);
+          }}
+          onSave={async (data) => {
+            if (editing) {
+              await vacationSuggestedAPI.update(editing.id, data);
+            } else {
+              await vacationSuggestedAPI.create(data);
+            }
+            onRefresh();
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+// =============== SuggestedEditModal (con calendario) ===============
+
+const SuggestedEditModal = ({ range, holidays, onClose, onSave }) => {
+  const [form, setForm] = useState({
+    name: range?.name || '',
+    description: range?.description || '',
+    color: range?.color || 'slate',
+  });
+  const initialDays = range
+    ? buildSelectedDaysFromRange(range.startDate, range.endDate, true)
+    : [];
+  const [days, setDays] = useState(initialDays);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const sortedDays = useMemo(() => [...days].sort(), [days]);
+  const startDate = sortedDays[0] || null;
+  const endDate = sortedDays[sortedDays.length - 1] || null;
+  const totalBusiness = sortedDays.filter((iso) => {
+    const d = new Date(iso + 'T00:00:00');
+    const dow = d.getDay();
+    return dow !== 0 && dow !== 6;
+  }).length;
+
+  const handleSave = async () => {
+    setError('');
+    if (!form.name.trim()) {
+      setError('Pon un nombre al rango');
+      return;
+    }
+    if (!startDate || !endDate) {
+      setError('Selecciona al menos un día');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({
+        name: form.name.trim(),
+        startDate,
+        endDate,
+        description: form.description,
+        color: form.color,
+      });
+      onClose();
+    } catch (e) {
+      setError(e.message || 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const colorChoices = ['slate', 'emerald', 'blue', 'amber', 'rose', 'violet'];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+      data-testid="suggested-form"
+    >
+      <motion.div
+        initial={{ scale: 0.96 }}
+        animate={{ scale: 1 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden"
+      >
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+              <CalendarRange className="w-5 h-5 text-slate-700" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">
+                {range ? 'Editar rango sugerido' : 'Nuevo rango sugerido'}
+              </h3>
+              <p className="text-xs text-slate-500">Elige los días en el calendario</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Nombre</label>
+              <input
+                type="text"
+                placeholder="Ej: Puente de Mayo, Verano, Navidad…"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                data-testid="suggested-name"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Descripción</label>
+              <textarea
+                rows={3}
+                placeholder="Opcional: contexto del rango sugerido…"
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Color</label>
+              <div className="flex flex-wrap gap-2">
+                {colorChoices.map((c) => {
+                  const p = rangeColorPalette[c];
+                  const active = form.color === c;
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setForm({ ...form, color: c })}
+                      className={`w-9 h-9 rounded-xl ${p.icon} flex items-center justify-center transition-all ${
+                        active ? 'ring-2 ring-offset-2 ring-slate-900 scale-110' : 'hover:scale-105'
+                      }`}
+                      title={c}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-current" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-4 ring-1 ring-slate-200/60">
+              <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-3">
+                Resumen
+              </p>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <p className="text-slate-500">Inicio</p>
+                  <p className="font-bold text-slate-900">{startDate || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Fin</p>
+                  <p className="font-bold text-slate-900">{endDate || '—'}</p>
+                </div>
+                <div className="col-span-2 pt-2 border-t border-slate-200/80 flex items-center justify-between">
+                  <span className="text-slate-500">Días laborables</span>
+                  <span className="font-black text-slate-900 text-base">{totalBusiness}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">
+              Selecciona los días del rango
+            </label>
+            <Calendar360
+              value={sortedDays}
+              onChange={setDays}
+              countWeekends={true}
+              holidays={holidays}
+            />
+            {error && (
+              <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs flex items-center gap-2">
+                <AlertCircle className="w-3.5 h-3.5" />
+                {error}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5"
+            data-testid="suggested-save"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+
 // =============== Main View ===============
 
 const VacationsView = () => {
@@ -1992,9 +2627,10 @@ const VacationsView = () => {
   const [myBalance, setMyBalance] = useState(null);
   const [holidays, setHolidays] = useState([]);
   const [policies, setPolicies] = useState([]);
+  const [suggestedRanges, setSuggestedRanges] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [activeTab, setActiveTab] = useState('solicitudes'); // solicitudes | bolsa | politicas
+  const [activeTab, setActiveTab] = useState('solicitudes'); // solicitudes | bolsa | sugeridas | politicas
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -2004,16 +2640,18 @@ const VacationsView = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [reqs, emps, hols, pols] = await Promise.all([
+      const [reqs, emps, hols, pols, ranges] = await Promise.all([
         vacationsAPI.list({ status: filterStatus, search }),
         isAdmin ? employeesAPI.getAll() : Promise.resolve([]),
         vacationHolidaysAPI.list().catch(() => []),
         vacationPoliciesAPI.list().catch(() => []),
+        vacationSuggestedAPI.list().catch(() => []),
       ]);
       setRequests(reqs);
       setEmployees(emps);
       setHolidays(hols);
       setPolicies(pols);
+      setSuggestedRanges(ranges);
 
       if (isAdmin) {
         const bs = await vacationsAPI.balances();
@@ -2120,10 +2758,11 @@ const VacationsView = () => {
       </div>
 
       {/* Sub-navigation tabs */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm inline-flex">
+      <div className="bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm inline-flex flex-wrap">
         {[
           { key: 'solicitudes', label: 'Solicitudes', icon: ListChecks },
           { key: 'bolsa', label: 'Bolsa de días', icon: WalletIcon },
+          { key: 'sugeridas', label: 'Sugeridas', icon: CalendarRange },
           { key: 'politicas', label: 'Políticas', icon: Settings, adminOnly: true },
         ].map((t) => {
           if (t.adminOnly && !isAdmin) return null;
@@ -2138,6 +2777,7 @@ const VacationsView = () => {
                   ? 'bg-slate-900 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-50'
               }`}
+              data-testid={`tab-${t.key}`}
             >
               <Icon className="w-4 h-4" />
               {t.label}
@@ -2157,30 +2797,7 @@ const VacationsView = () => {
             className="space-y-6"
           >
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <KpiCard
-          icon={Wallet}
-          label={kpi.availableLabel}
-          value={kpi.availableValue}
-          sub={kpi.availableSub}
-          accent="emerald"
-        />
-        <KpiCard
-          icon={TrendingDown}
-          label="Días Consumidos"
-          value={kpi.usedValue}
-          sub={isAdmin ? 'Total acumulado del equipo' : 'Aprobados este año'}
-          accent="blue"
-        />
-        <KpiCard
-          icon={Clock}
-          label="Solicitudes en Revisión"
-          value={kpi.pendingValue}
-          sub="Pendientes de aprobación"
-          accent="amber"
-        />
-      </div>
+      {/* KPI cards removed per request */}
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
@@ -2391,6 +3008,24 @@ const VacationsView = () => {
           </motion.div>
         )}
 
+        {activeTab === 'sugeridas' && (
+          <motion.div
+            key="sugeridas"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-6"
+          >
+            <SugeridasTab
+              ranges={suggestedRanges}
+              holidays={holidays}
+              isAdmin={isAdmin}
+              onRefresh={fetchAll}
+            />
+          </motion.div>
+        )}
+
         {activeTab === 'politicas' && isAdmin && (
           <motion.div
             key="politicas"
@@ -2481,6 +3116,7 @@ const VacationsView = () => {
         balance={myBalance}
         balances={balances}
         holidays={holidays}
+        suggestedRanges={suggestedRanges}
       />
 
       {reviewing && (

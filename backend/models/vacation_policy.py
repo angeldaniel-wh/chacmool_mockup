@@ -49,3 +49,31 @@ class HolidayUpdate(BaseModel):
     name: Optional[str] = None
     country: Optional[str] = None
     recurring: Optional[bool] = None
+
+
+# ---- Suggested Vacation Ranges ----
+
+class SuggestedRange(BaseModel):
+    id: str
+    name: str
+    startDate: str      # YYYY-MM-DD
+    endDate: str        # YYYY-MM-DD
+    description: Optional[str] = None
+    color: Optional[str] = "slate"   # ui hint: slate | emerald | blue | amber | rose | violet
+    createdAt: datetime = datetime.now()
+
+
+class SuggestedRangeCreate(BaseModel):
+    name: str
+    startDate: str
+    endDate: str
+    description: Optional[str] = None
+    color: Optional[str] = "slate"
+
+
+class SuggestedRangeUpdate(BaseModel):
+    name: Optional[str] = None
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None

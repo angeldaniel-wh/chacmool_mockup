@@ -10,6 +10,9 @@ from models.vacation_policy import (
     Holiday,
     HolidayCreate,
     HolidayUpdate,
+    SuggestedRange,
+    SuggestedRangeCreate,
+    SuggestedRangeUpdate,
 )
 from middlewares.auth import (
     db,
@@ -19,6 +22,7 @@ from middlewares.auth import (
 
 router = APIRouter(prefix="/api/vacation-policies", tags=["vacation-policies"])
 holidays_router = APIRouter(prefix="/api/vacation-holidays", tags=["vacation-holidays"])
+suggested_router = APIRouter(prefix="/api/vacation-suggested-ranges", tags=["vacation-suggested-ranges"])
 
 
 # ---------------- Policies ----------------
@@ -131,3 +135,62 @@ async def delete_holiday(
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Festivo no encontrado")
     return {"message": "Festivo eliminado"}
+
+
+# ---------------- Suggested Ranges ----------------
+
+@suggested_router.get("", response_model=List[SuggestedRange])
+async def list_suggested_ranges(current_user: dict = Depends(get_current_active_user)):
+    items = await db.vacation_suggested_ranges.find({}, {"_id": 0}).sort("startDate", 1).to_list(500)
+    return items
+
+
+@suggested_router.post("", response_model=SuggestedRange)
+async def create_suggested_range(
+    data: SuggestedRangeCreate,
+    current_user: dict = Depends(require_manager_or_admin),
+):
+    if data.endDate < data.startDate:
+        raise HTTPException(status_code=400, detail="endDate debe ser >= startDate")
+    item = {
+        "id": str(uuid4()),
+        "name": data.name,
+        "startDate": data.startDate,
+        "endDate": data.endDate,
+        "description": data.description,
+        "color": data.color or "slate",
+        "createdAt": datetime.now(),
+    }
+    await db.vacation_suggested_ranges.insert_one(item.copy())
+    return item
+
+
+@suggested_router.put("/{range_id}", response_model=SuggestedRange)
+async def update_suggested_range(
+    range_id: str,
+    data: SuggestedRangeUpdate,
+    current_user: dict = Depends(require_manager_or_admin),
+):
+    existing = await db.vacation_suggested_ranges.find_one({"id": range_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Rango no encontrado")
+    update = {k: v for k, v in data.dict(exclude_unset=True).items() if v is not None}
+    if "startDate" in update or "endDate" in update:
+        sd = update.get("startDate", existing["startDate"])
+        ed = update.get("endDate", existing["endDate"])
+        if ed < sd:
+            raise HTTPException(status_code=400, detail="endDate debe ser >= startDate")
+    if update:
+        await db.vacation_suggested_ranges.update_one({"id": range_id}, {"$set": update})
+    return await db.vacation_suggested_ranges.find_one({"id": range_id}, {"_id": 0})
+
+
+@suggested_router.delete("/{range_id}")
+async def delete_suggested_range(
+    range_id: str,
+    current_user: dict = Depends(require_manager_or_admin),
+):
+    res = await db.vacation_suggested_ranges.delete_one({"id": range_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Rango no encontrado")
+    return {"message": "Rango eliminado"}
