@@ -29,6 +29,7 @@ from routes.kpis import router as kpis_router
 from routes.empleado_a import router as empleado_a_router
 from routes.pdi import router as pdi_router
 from routes.vacations import router as vacations_router
+from routes.vacation_policies import router as vacation_policies_router, holidays_router as vacation_holidays_router
 
 # Include routers
 app.include_router(auth_router)
@@ -39,6 +40,8 @@ app.include_router(kpis_router)
 app.include_router(empleado_a_router)
 app.include_router(pdi_router)
 app.include_router(vacations_router)
+app.include_router(vacation_policies_router)
+app.include_router(vacation_holidays_router)
 
 @app.get("/api/health")
 async def health_check():

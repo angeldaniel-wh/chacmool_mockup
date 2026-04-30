@@ -9,6 +9,7 @@ class Employee(BaseModel):
     department: str
     email: str
     avatar: Optional[str] = None
+    hireDate: Optional[str] = None  # ISO date YYYY-MM-DD
     evaluations: dict = {}
     kpis_score: int = 0
     eval_360_score: int = 0
@@ -21,6 +22,7 @@ class EmployeeCreate(BaseModel):
     department: str
     email: str
     avatar: Optional[str] = None
+    hireDate: Optional[str] = None
 
 class EmployeeUpdate(BaseModel):
     name: Optional[str] = None
@@ -28,5 +30,6 @@ class EmployeeUpdate(BaseModel):
     department: Optional[str] = None
     email: Optional[str] = None
     avatar: Optional[str] = None
+    hireDate: Optional[str] = None
     kpis_score: Optional[int] = None
     eval_360_score: Optional[int] = None

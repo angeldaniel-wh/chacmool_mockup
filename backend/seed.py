@@ -44,14 +44,14 @@ async def seed_database():
     # Seed Employees FIRST (para referenciarlos en users)
     print("Creating employees...")
     employees = [
-        {"id": "1", "name": "María García López", "position": "Tech Lead", "department": "Tecnología", "area": "Tecnología", "email": "maria@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Maria", "evaluations": {"superior": 90, "subordinados": 88, "companeros": 85, "cliente": 92}, "kpis_score": 88, "eval_360_score": 89, "category": "A", "created_at": datetime.now()},
-        {"id": "2", "name": "Juan Rodríguez", "position": "Senior Developer", "department": "Desarrollo", "area": "Desarrollo", "email": "juan@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Juan", "evaluations": {"superior": 82, "subordinados": 80, "companeros": 78}, "kpis_score": 82, "eval_360_score": 80, "category": "B1", "created_at": datetime.now()},
-        {"id": "3", "name": "Laura Sánchez", "position": "Sales Manager", "department": "Ventas", "area": "Ventas", "email": "laura@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Laura", "evaluations": {"superior": 75, "companeros": 80}, "kpis_score": 72, "eval_360_score": 77, "category": "B2", "created_at": datetime.now()},
-        {"id": "4", "name": "Carlos Mendoza", "position": "Developer", "department": "Tecnología", "area": "Tecnología", "email": "carlos@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Carlos", "evaluations": {"superior": 88, "companeros": 85}, "kpis_score": 85, "eval_360_score": 87, "category": "A", "created_at": datetime.now()},
-        {"id": "5", "name": "Ana Martínez", "position": "Junior Developer", "department": "Tecnología", "area": "Tecnología", "email": "ana@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Ana", "evaluations": {"superior": 70, "companeros": 75}, "kpis_score": 68, "eval_360_score": 72, "category": "B2", "created_at": datetime.now()},
-        {"id": "6", "name": "Roberto Fernández", "position": "Operations Manager", "department": "Operaciones", "area": "Operaciones", "email": "roberto@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Roberto", "evaluations": {"superior": 78, "subordinados": 76}, "kpis_score": 80, "eval_360_score": 77, "category": "B1", "created_at": datetime.now()},
-        {"id": "7", "name": "Patricia Ruiz", "position": "Sales Representative", "department": "Ventas", "area": "Ventas", "email": "patricia@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Patricia", "evaluations": {"superior": 65}, "kpis_score": 60, "eval_360_score": 65, "category": "C1", "created_at": datetime.now()},
-        {"id": "8", "name": "Diego Morales", "position": "Product Manager", "department": "Producto", "area": "Producto", "email": "diego@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Diego", "evaluations": {"superior": 85, "companeros": 82}, "kpis_score": 84, "eval_360_score": 83, "category": "B1", "created_at": datetime.now()}
+        {"id": "1", "name": "María García López", "position": "Tech Lead", "department": "Tecnología", "area": "Tecnología", "email": "maria@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Maria", "hireDate": "2018-03-15", "evaluations": {"superior": 90, "subordinados": 88, "companeros": 85, "cliente": 92}, "kpis_score": 88, "eval_360_score": 89, "category": "A", "created_at": datetime.now()},
+        {"id": "2", "name": "Juan Rodríguez", "position": "Senior Developer", "department": "Desarrollo", "area": "Desarrollo", "email": "juan@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Juan", "hireDate": "2020-06-01", "evaluations": {"superior": 82, "subordinados": 80, "companeros": 78}, "kpis_score": 82, "eval_360_score": 80, "category": "B1", "created_at": datetime.now()},
+        {"id": "3", "name": "Laura Sánchez", "position": "Sales Manager", "department": "Ventas", "area": "Ventas", "email": "laura@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Laura", "hireDate": "2017-09-10", "evaluations": {"superior": 75, "companeros": 80}, "kpis_score": 72, "eval_360_score": 77, "category": "B2", "created_at": datetime.now()},
+        {"id": "4", "name": "Carlos Mendoza", "position": "Developer", "department": "Tecnología", "area": "Tecnología", "email": "carlos@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Carlos", "hireDate": "2022-01-20", "evaluations": {"superior": 88, "companeros": 85}, "kpis_score": 85, "eval_360_score": 87, "category": "A", "created_at": datetime.now()},
+        {"id": "5", "name": "Ana Martínez", "position": "Junior Developer", "department": "Tecnología", "area": "Tecnología", "email": "ana@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Ana", "hireDate": "2024-08-05", "evaluations": {"superior": 70, "companeros": 75}, "kpis_score": 68, "eval_360_score": 72, "category": "B2", "created_at": datetime.now()},
+        {"id": "6", "name": "Roberto Fernández", "position": "Operations Manager", "department": "Operaciones", "area": "Operaciones", "email": "roberto@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Roberto", "hireDate": "2019-11-12", "evaluations": {"superior": 78, "subordinados": 76}, "kpis_score": 80, "eval_360_score": 77, "category": "B1", "created_at": datetime.now()},
+        {"id": "7", "name": "Patricia Ruiz", "position": "Sales Representative", "department": "Ventas", "area": "Ventas", "email": "patricia@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Patricia", "hireDate": "2023-04-18", "evaluations": {"superior": 65}, "kpis_score": 60, "eval_360_score": 65, "category": "C1", "created_at": datetime.now()},
+        {"id": "8", "name": "Diego Morales", "position": "Product Manager", "department": "Producto", "area": "Producto", "email": "diego@empresa.com", "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Diego", "hireDate": "2021-02-14", "evaluations": {"superior": 85, "companeros": 82}, "kpis_score": 84, "eval_360_score": 83, "category": "B1", "created_at": datetime.now()}
     ]
     await db.employees.insert_many(employees)
     print(f"✅ Created {len(employees)} employees")
@@ -456,6 +456,37 @@ async def seed_database():
     await db.empleado_a_autoevaluaciones.insert_many(autoevaluaciones)
     print(f"✅ Created {len(autoevaluaciones)} autoevaluaciones")
 
+    # Seed Vacation Policies
+    print("Creating vacation policies...")
+    await db.vacation_policies.delete_many({})
+    policies = [
+        {"id": "pol-1", "name": "0 - 1 año", "yearsFrom": 0, "yearsTo": 1, "days": 12, "description": "Empleados con menos de 1 año de antigüedad", "createdAt": datetime.now()},
+        {"id": "pol-2", "name": "1 - 3 años", "yearsFrom": 1, "yearsTo": 3, "days": 14, "description": "Empleados con 1 a 3 años de antigüedad", "createdAt": datetime.now()},
+        {"id": "pol-3", "name": "3 - 5 años", "yearsFrom": 3, "yearsTo": 5, "days": 16, "description": "Empleados con 3 a 5 años de antigüedad", "createdAt": datetime.now()},
+        {"id": "pol-4", "name": "5 - 10 años", "yearsFrom": 5, "yearsTo": 10, "days": 20, "description": "Empleados con 5 a 10 años de antigüedad", "createdAt": datetime.now()},
+        {"id": "pol-5", "name": "10+ años", "yearsFrom": 10, "yearsTo": 999, "days": 25, "description": "Empleados senior con más de 10 años", "createdAt": datetime.now()},
+    ]
+    await db.vacation_policies.insert_many(policies)
+    print(f"✅ Created {len(policies)} vacation policies")
+
+    # Seed Vacation Holidays (festivos España + algunos comunes)
+    print("Creating vacation holidays...")
+    await db.vacation_holidays.delete_many({})
+    cy = datetime.now().year
+    holidays_seed = [
+        {"id": "h1", "date": f"{cy}-01-01", "name": "Año Nuevo", "country": "ES", "recurring": True},
+        {"id": "h2", "date": f"{cy}-01-06", "name": "Reyes", "country": "ES", "recurring": True},
+        {"id": "h3", "date": f"{cy}-05-01", "name": "Día del Trabajo", "country": "ES", "recurring": True},
+        {"id": "h4", "date": f"{cy}-08-15", "name": "Asunción de la Virgen", "country": "ES", "recurring": True},
+        {"id": "h5", "date": f"{cy}-10-12", "name": "Fiesta Nacional", "country": "ES", "recurring": True},
+        {"id": "h6", "date": f"{cy}-11-01", "name": "Todos los Santos", "country": "ES", "recurring": True},
+        {"id": "h7", "date": f"{cy}-12-06", "name": "Día de la Constitución", "country": "ES", "recurring": True},
+        {"id": "h8", "date": f"{cy}-12-08", "name": "Inmaculada Concepción", "country": "ES", "recurring": True},
+        {"id": "h9", "date": f"{cy}-12-25", "name": "Navidad", "country": "ES", "recurring": True},
+    ]
+    await db.vacation_holidays.insert_many(holidays_seed)
+    print(f"✅ Created {len(holidays_seed)} holidays")
+
     # Seed Vacation Balances + sample requests
     print("Creating vacation balances and requests...")
     await db.vacation_balances.delete_many({})
@@ -464,6 +495,22 @@ async def seed_database():
     from datetime import date as _date, timedelta as _td
 
     current_year = datetime.now().year
+
+    # Helper local: calcular antigüedad en años y días según política
+    def _seniority_years(hire_date_iso):
+        if not hire_date_iso:
+            return 0
+        try:
+            hd = datetime.strptime(hire_date_iso, "%Y-%m-%d").date()
+            return (datetime.now().date() - hd).days / 365.25
+        except Exception:
+            return 0
+
+    def _policy_days(years):
+        for p in policies:
+            if p["yearsFrom"] <= years < p["yearsTo"]:
+                return p["days"]
+        return 12
 
     # Helper local: count business days
     def _bizdays(s, e):
@@ -483,16 +530,18 @@ async def seed_database():
 
     balances = []
     for emp in employees:
+        sen = _seniority_years(emp.get("hireDate"))
+        days = _policy_days(sen)
         balances.append({
             "employeeId": emp["id"],
             "employeeName": emp["name"],
             "employeeAvatar": emp["avatar"],
             "employeeDepartment": emp["department"],
             "year": current_year,
-            "totalDays": 12,
+            "totalDays": days,
             "daysUsed": 0,
             "daysPending": 0,
-            "daysAvailable": 12,
+            "daysAvailable": days,
         })
     await db.vacation_balances.insert_many(balances)
 
@@ -564,9 +613,11 @@ async def seed_database():
         pending = [r for r in sample_requests if r["employeeId"] == emp["id"] and r["status"] == "Pendiente" and r["type"] in {"Vacaciones", "Asuntos Propios", "Compensatorio"}]
         used = sum(r["totalDays"] for r in approved)
         pend = sum(r["totalDays"] for r in pending)
+        sen = _seniority_years(emp.get("hireDate"))
+        days = _policy_days(sen)
         await db.vacation_balances.update_one(
             {"employeeId": emp["id"], "year": current_year},
-            {"$set": {"daysUsed": used, "daysPending": pend, "daysAvailable": max(12 - used, 0)}}
+            {"$set": {"totalDays": days, "daysUsed": used, "daysPending": pend, "daysAvailable": max(days - used, 0)}}
         )
     print(f"✅ Created {len(balances)} vacation balances and {len(sample_requests)} requests")
 

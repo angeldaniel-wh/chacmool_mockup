@@ -23,8 +23,13 @@ import {
   Wallet,
   Save,
   Palmtree,
+  PartyPopper,
+  Pencil,
+  Settings,
+  ListChecks,
+  Wallet as WalletIcon,
 } from 'lucide-react';
-import { vacationsAPI, employeesAPI } from '../services/api';
+import { vacationsAPI, employeesAPI, vacationPoliciesAPI, vacationHolidaysAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 // =============== Helpers ===============
@@ -129,55 +134,125 @@ const TypeChip = ({ type }) => {
 
 // =============== Drawer: New Request ===============
 
-const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmployeeId, balance }) => {
+const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmployeeId, balance, balances = [], holidays }) => {
   const [form, setForm] = useState({
     employeeId: currentEmployeeId || '',
     type: 'Vacaciones',
-    startDate: '',
-    endDate: '',
+    selectedDays: [],
+    countWeekends: false,
     reason: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [limitWarning, setLimitWarning] = useState('');
 
   useEffect(() => {
     if (open) {
       setForm({
         employeeId: currentEmployeeId || '',
         type: 'Vacaciones',
-        startDate: '',
-        endDate: '',
+        selectedDays: [],
+        countWeekends: false,
         reason: '',
       });
       setError('');
+      setLimitWarning('');
     }
   }, [open, currentEmployeeId]);
 
-  const totalDays = useMemo(
-    () => countBusinessDays(form.startDate, form.endDate),
-    [form.startDate, form.endDate]
-  );
+  const sortedDays = useMemo(() => [...form.selectedDays].sort(), [form.selectedDays]);
+
+  const totalDays = useMemo(() => {
+    if (form.countWeekends) return sortedDays.length;
+    return sortedDays.filter((iso) => {
+      const d = new Date(iso + 'T00:00:00');
+      const dow = d.getDay();
+      return dow !== 0 && dow !== 6;
+    }).length;
+  }, [sortedDays, form.countWeekends]);
+
+  const startDate = sortedDays[0] || null;
+  const endDate = sortedDays[sortedDays.length - 1] || null;
+  const returnDate = endDate ? computeReturnDate(endDate) : null;
 
   const valid =
-    form.startDate &&
-    form.endDate &&
-    form.startDate >= todayISO() &&
-    form.endDate >= form.startDate &&
+    sortedDays.length > 0 &&
     totalDays > 0 &&
     (!isAdmin || form.employeeId);
 
   const consumesBalance = ['Vacaciones', 'Asuntos Propios', 'Compensatorio'].includes(form.type);
 
+  // Determinar la bolsa efectiva: empleado usa su prop balance; admin busca en `balances` según empleado seleccionado
+  const effectiveBalance = useMemo(() => {
+    if (isAdmin) {
+      if (!form.employeeId) return null;
+      return balances.find((b) => b.employeeId === form.employeeId) || null;
+    }
+    return balance || null;
+  }, [isAdmin, form.employeeId, balances, balance]);
+
+  const availableDays = effectiveBalance?.daysAvailable ?? null;
+  const exceedsBalance = consumesBalance && availableDays != null && totalDays > availableDays;
+
+  // Calcula días laborables (o totales si countWeekends) de un array de ISOs
+  const computeBusinessDaysFromArr = (arr, cw) => {
+    if (cw) return arr.length;
+    return arr.filter((iso) => {
+      const d = new Date(iso + 'T00:00:00');
+      const dow = d.getDay();
+      return dow !== 0 && dow !== 6;
+    }).length;
+  };
+
+  // Wrapper para Calendar360.onChange que valida el límite de bolsa
+  const handleCalendarChange = (newDays) => {
+    setLimitWarning('');
+    if (consumesBalance && availableDays != null) {
+      const projected = computeBusinessDaysFromArr(newDays, form.countWeekends);
+      // Solo bloquear cuando se intente AÑADIR (no al deseleccionar)
+      const isAdding = newDays.length > form.selectedDays.length;
+      if (isAdding && projected > availableDays) {
+        setLimitWarning(
+          `No puedes seleccionar más días: solo tienes ${availableDays} día${
+            availableDays === 1 ? '' : 's'
+          } disponible${availableDays === 1 ? '' : 's'} en tu bolsa.`
+        );
+        return; // bloquea la selección
+      }
+    }
+    setForm({ ...form, selectedDays: newDays });
+  };
+
+  // Si cambia tipo o countWeekends, recalcular si la selección actual sobrepasa
+  useEffect(() => {
+    if (consumesBalance && availableDays != null && totalDays > availableDays) {
+      setLimitWarning(
+        `Tu selección (${totalDays}) supera tu bolsa disponible (${availableDays}). Ajusta los días.`
+      );
+    } else {
+      setLimitWarning('');
+    }
+    // eslint-disable-next-line
+  }, [form.type, form.countWeekends, form.employeeId]);
+
   const handleSubmit = async () => {
     if (!valid) return;
+    if (exceedsBalance) {
+      setError(
+        `No puedes enviar la solicitud: superas tu bolsa disponible (${availableDays} días).`
+      );
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
       await onSubmit({
         employeeId: isAdmin ? form.employeeId : undefined,
         type: form.type,
-        startDate: form.startDate,
-        endDate: form.endDate,
+        selectedDays: sortedDays,
+        countWeekends: form.countWeekends,
+        startDate: startDate,
+        endDate: endDate,
         reason: form.reason,
       });
       onClose();
@@ -205,12 +280,12 @@ const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmp
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="fixed top-0 right-0 h-full w-full sm:w-[440px] bg-white shadow-2xl z-50 flex flex-col"
+            className="fixed top-0 right-0 h-full w-full sm:w-[520px] bg-white shadow-2xl z-50 flex flex-col"
           >
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Nueva solicitud</h3>
-                <p className="text-xs text-slate-500">Solicita días de ausencia</p>
+                <p className="text-xs text-slate-500">Selecciona los días en el calendario</p>
               </div>
               <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
                 <X className="w-5 h-5 text-slate-500" />
@@ -262,56 +337,88 @@ const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmp
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Desde</label>
-                  <input
-                    type="date"
-                    min={todayISO()}
-                    value={form.startDate}
-                    onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Hasta</label>
-                  <input
-                    type="date"
-                    min={form.startDate || todayISO()}
-                    value={form.endDate}
-                    onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
-                </div>
+              {/* Calendario */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Selecciona los días</label>
+                {consumesBalance && availableDays != null && (
+                  <div className="mb-2 flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-xs">
+                    <span className="text-emerald-700 font-medium">
+                      Bolsa disponible: <span className="font-bold">{availableDays}</span> día{availableDays === 1 ? '' : 's'}
+                    </span>
+                    <span className="text-slate-600">
+                      Seleccionados: <span className="font-bold text-slate-900">{totalDays}</span>
+                    </span>
+                  </div>
+                )}
+                <Calendar360
+                  value={sortedDays}
+                  onChange={handleCalendarChange}
+                  countWeekends={form.countWeekends}
+                  holidays={holidays}
+                />
+                {limitWarning && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-3 py-2 text-xs flex items-start gap-2"
+                  >
+                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <span>{limitWarning}</span>
+                  </motion.div>
+                )}
               </div>
+
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={form.countWeekends}
+                  onChange={(e) => setForm({ ...form, countWeekends: e.target.checked })}
+                  className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                />
+                <span className="text-sm text-slate-700">Contar sábados y domingos</span>
+              </label>
 
               {/* Resumen dinámico */}
               <motion.div
-                key={`${form.startDate}-${form.endDate}-${form.type}`}
+                key={`${startDate}-${endDate}-${form.type}`}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="bg-slate-50 rounded-2xl p-4 ring-1 ring-slate-100"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <CalendarDays className="w-5 h-5 text-slate-700" />
                     <p className="text-sm font-medium text-slate-700">Resumen</p>
                   </div>
                   <span className="text-2xl font-bold text-slate-900">{totalDays}</span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  {totalDays === 1 ? 'día laborable' : 'días laborables'} solicitados
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <p className="text-slate-500">Inicio</p>
+                    <p className="font-semibold text-slate-900">{startDate || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Fin</p>
+                    <p className="font-semibold text-slate-900">{endDate || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Reincorp.</p>
+                    <p className="font-semibold text-emerald-600">{returnDate || '—'}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  {totalDays === 1 ? 'día laborable' : 'días laborables'}
                   {consumesBalance ? ' · resta del saldo' : ' · no resta del saldo'}
                 </p>
-                {!isAdmin && balance && consumesBalance && (
+                {effectiveBalance && consumesBalance && (
                   <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between text-xs">
                     <span className="text-slate-500">Disponibles tras solicitud</span>
                     <span
                       className={`font-semibold ${
-                        balance.daysAvailable - totalDays < 0 ? 'text-red-600' : 'text-slate-900'
+                        effectiveBalance.daysAvailable - totalDays < 0 ? 'text-red-600' : 'text-slate-900'
                       }`}
                     >
-                      {Math.max(balance.daysAvailable - totalDays, 0)} / {balance.totalDays}
+                      {Math.max(effectiveBalance.daysAvailable - totalDays, 0)} / {effectiveBalance.totalDays}
                     </span>
                   </div>
                 )}
@@ -345,10 +452,10 @@ const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmp
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={!valid || submitting}
+                disabled={!valid || submitting || exceedsBalance}
                 className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold"
               >
-                {submitting ? 'Enviando…' : 'Enviar solicitud'}
+                {submitting ? 'Enviando…' : exceedsBalance ? 'Sin saldo suficiente' : 'Enviar solicitud'}
               </button>
             </div>
           </motion.aside>
@@ -362,8 +469,9 @@ const RequestDrawer = ({ open, onClose, onSubmit, employees, isAdmin, currentEmp
 
 // =============== Calendar (multi-day select) ===============
 
-const Calendar360 = ({ value = [], onChange, countWeekends = false, monthOffset = 0 }) => {
+const Calendar360 = ({ value = [], onChange, countWeekends = false, monthOffset = 0, holidays = [] }) => {
   // value: array of ISO dates "YYYY-MM-DD"
+  // holidays: array of objects with {date: ISO, name, recurring}
   const [viewMonth, setViewMonth] = useState(() => {
     const t = new Date();
     return new Date(t.getFullYear(), t.getMonth() + monthOffset, 1);
@@ -376,6 +484,24 @@ const Calendar360 = ({ value = [], onChange, countWeekends = false, monthOffset 
     ];
     return `${months[viewMonth.getMonth()]} de ${viewMonth.getFullYear()}`;
   }, [viewMonth]);
+
+  // Set de fechas festivas para el año mostrado (incluye recurring por mm-dd)
+  const holidaySet = useMemo(() => {
+    const y = viewMonth.getFullYear();
+    const set = new Map();
+    (holidays || []).forEach((h) => {
+      const d = new Date(h.date + 'T00:00:00');
+      if (isNaN(d)) return;
+      if (h.recurring) {
+        const key = `${y}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        set.set(key, h.name);
+      } else if (d.getFullYear() === y) {
+        const key = h.date;
+        set.set(key, h.name);
+      }
+    });
+    return set;
+  }, [holidays, viewMonth]);
 
   const grid = useMemo(() => {
     const y = viewMonth.getFullYear();
@@ -401,6 +527,8 @@ const Calendar360 = ({ value = [], onChange, countWeekends = false, monthOffset 
     const dow = d.getDay();
     return dow === 0 || dow === 6;
   };
+  const isHoliday = (d) => holidaySet.has(toIso(d));
+  const holidayName = (d) => holidaySet.get(toIso(d));
   const isPast = (d) => {
     const t = new Date();
     t.setHours(0, 0, 0, 0);
@@ -410,6 +538,7 @@ const Calendar360 = ({ value = [], onChange, countWeekends = false, monthOffset 
   const toggle = (d) => {
     if (isPast(d)) return;
     if (!countWeekends && isWeekend(d)) return;
+    if (isHoliday(d)) return; // festivos no son seleccionables
     const iso = toIso(d);
     if (value.includes(iso)) {
       onChange(value.filter((v) => v !== iso));
@@ -456,34 +585,46 @@ const Calendar360 = ({ value = [], onChange, countWeekends = false, monthOffset 
           const sel = isSelected(d);
           const past = isPast(d);
           const we = isWeekend(d);
-          const disabled = past || (!countWeekends && we);
+          const hol = isHoliday(d);
+          const disabled = past || hol || (!countWeekends && we);
           return (
             <button
               key={idx}
               type="button"
               onClick={() => toggle(d)}
               disabled={disabled}
-              className={`h-9 rounded-lg text-xs font-medium transition-all ${
+              title={hol ? holidayName(d) : ''}
+              className={`h-9 rounded-lg text-xs font-medium transition-all relative ${
                 sel
                   ? 'bg-slate-900 text-white shadow-sm'
-                  : disabled
+                  : hol
+                  ? 'bg-orange-100 text-orange-700 cursor-not-allowed'
+                  : past
                   ? we
-                    ? 'text-rose-400 cursor-not-allowed'
+                    ? 'text-rose-300 cursor-not-allowed'
                     : 'text-slate-300 cursor-not-allowed'
                   : we
-                  ? 'text-rose-500 hover:bg-rose-50'
+                  ? !countWeekends
+                    ? 'text-rose-500 cursor-not-allowed'
+                    : 'text-rose-500 hover:bg-rose-50'
                   : 'text-slate-700 hover:bg-white hover:shadow-sm'
               }`}
             >
               {d.getDate()}
+              {hol && !sel && (
+                <span className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-orange-500" />
+              )}
             </button>
           );
         })}
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-200/70 flex items-center gap-4 text-[10px] text-slate-500 uppercase font-medium tracking-wider">
+      <div className="mt-4 pt-3 border-t border-slate-200/70 flex items-center gap-4 text-[10px] text-slate-500 uppercase font-medium tracking-wider flex-wrap">
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-rose-500" /> Fines de semana
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-orange-500" /> Festivos
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-slate-900" /> Seleccionado
@@ -523,7 +664,7 @@ const computeReturnDate = (lastIso) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const EditRequestModal = ({ request, balance, onClose, onSave }) => {
+const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) => {
   const [days, setDays] = useState([]);
   const [countWeekends, setCountWeekends] = useState(false);
   const [comment, setComment] = useState('');
@@ -684,7 +825,22 @@ const EditRequestModal = ({ request, balance, onClose, onSave }) => {
                       <p className="text-2xl font-bold text-emerald-600 mt-1">{availableBalance}</p>
                     </div>
                   </div>
-                  <div className="border-t border-dashed border-slate-200 mt-4 pt-3 flex items-center justify-between">
+                  {balance?.seniorityYears != null && (
+                    <div className="border-t border-dashed border-slate-200 mt-4 pt-3 flex items-center justify-between">
+                      <span className="text-xs uppercase tracking-wider font-semibold text-slate-500">
+                        Antigüedad:
+                      </span>
+                      <span className="text-sm font-bold text-slate-900">
+                        {Math.floor(balance.seniorityYears)} años
+                        {balance?.hireDate && (
+                          <span className="ml-2 text-[11px] font-medium text-slate-500">
+                            (desde {balance.hireDate})
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  <div className="border-t border-dashed border-slate-200 mt-3 pt-3 flex items-center justify-between">
                     <span className="text-xs uppercase tracking-wider font-semibold text-slate-500">
                       Restante tras solicitud:
                     </span>
@@ -712,6 +868,7 @@ const EditRequestModal = ({ request, balance, onClose, onSave }) => {
                     value={sortedDays}
                     onChange={setDays}
                     countWeekends={countWeekends}
+                    holidays={holidays}
                   />
                 </div>
               </div>
@@ -859,6 +1016,636 @@ const EditRequestModal = ({ request, balance, onClose, onSave }) => {
   );
 };
 
+// =============== BolsaTab (Bolsa de Días) ===============
+
+const BolsaTab = ({ isAdmin, balances, myBalance, policies }) => {
+  if (!isAdmin && myBalance) {
+    const pct = myBalance.totalDays > 0 ? (myBalance.daysUsed / myBalance.totalDays) * 100 : 0;
+    return (
+      <div className="space-y-5">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-slate-900">Mi Bolsa de Vacaciones</h3>
+            <span className="text-xs text-slate-500">Año {new Date().getFullYear()}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-center mb-6">
+            <div className="bg-slate-50 rounded-xl p-4">
+              <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Total</p>
+              <p className="text-3xl font-bold text-slate-900 mt-1">{myBalance.totalDays}</p>
+            </div>
+            <div className="bg-blue-50 rounded-xl p-4">
+              <p className="text-[10px] uppercase tracking-wider text-blue-600 font-semibold">Consumidos</p>
+              <p className="text-3xl font-bold text-blue-700 mt-1">{myBalance.daysUsed}</p>
+            </div>
+            <div className="bg-emerald-50 rounded-xl p-4">
+              <p className="text-[10px] uppercase tracking-wider text-emerald-600 font-semibold">Disponibles</p>
+              <p className="text-3xl font-bold text-emerald-700 mt-1">{myBalance.daysAvailable}</p>
+            </div>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-gradient-to-r from-emerald-500 to-blue-500"
+              initial={{ width: 0 }}
+              animate={{ width: `${pct}%` }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+            />
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            Has consumido {myBalance.daysUsed} de {myBalance.totalDays} días ({pct.toFixed(0)}%)
+          </p>
+
+          {myBalance.seniorityYears != null && (
+            <div className="mt-5 pt-5 border-t border-slate-200 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Antigüedad</p>
+                <p className="text-lg font-bold text-slate-900">
+                  {Math.floor(myBalance.seniorityYears)} años
+                </p>
+                {myBalance.hireDate && (
+                  <p className="text-xs text-slate-500 mt-0.5">Desde {myBalance.hireDate}</p>
+                )}
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Política aplicada</p>
+                <p className="text-sm font-medium text-slate-700 mt-1">
+                  {policies.find(
+                    (p) =>
+                      p.yearsFrom <= myBalance.seniorityYears &&
+                      myBalance.seniorityYears < p.yearsTo
+                  )?.name || '—'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Admin view - tabla completa
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+        <h3 className="font-semibold text-slate-900">Bolsa de Días — Empleados</h3>
+        <span className="text-xs text-slate-500">Año {new Date().getFullYear()}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-slate-50/70 border-b border-slate-100">
+            <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+              <th className="px-5 py-3 font-medium">Empleado</th>
+              <th className="px-5 py-3 font-medium">Antigüedad</th>
+              <th className="px-5 py-3 font-medium">Total</th>
+              <th className="px-5 py-3 font-medium">Consumidos</th>
+              <th className="px-5 py-3 font-medium">Pendientes</th>
+              <th className="px-5 py-3 font-medium">Disponibles</th>
+              <th className="px-5 py-3 font-medium">Progreso</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {balances.map((b) => {
+              const pct = b.totalDays > 0 ? (b.daysUsed / b.totalDays) * 100 : 0;
+              return (
+                <tr key={b.employeeId} className="hover:bg-slate-50/60">
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <img src={b.employeeAvatar} alt={b.employeeName} className="w-8 h-8 rounded-full bg-slate-100" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{b.employeeName}</p>
+                        <p className="text-xs text-slate-500">{b.employeeDepartment}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">
+                        {b.seniorityYears != null ? `${Math.floor(b.seniorityYears)} años` : '—'}
+                      </p>
+                      {b.hireDate && <p className="text-[11px] text-slate-500">{b.hireDate}</p>}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 text-sm font-medium text-slate-900">{b.totalDays}</td>
+                  <td className="px-5 py-3 text-sm text-blue-700">{b.daysUsed}</td>
+                  <td className="px-5 py-3 text-sm text-amber-700">{b.daysPending}</td>
+                  <td className="px-5 py-3">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        b.daysAvailable <= 2
+                          ? 'bg-red-50 text-red-700'
+                          : b.daysAvailable <= 5
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-emerald-50 text-emerald-700'
+                      }`}
+                    >
+                      {b.daysAvailable}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 w-32">
+                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-blue-500"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.6, ease: 'easeOut' }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">{pct.toFixed(0)}%</p>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// =============== PoliciesTab (Políticas + Festivos) ===============
+
+const PoliciesTab = ({ policies, holidays, onRefresh }) => {
+  const [editingPolicy, setEditingPolicy] = useState(null);
+  const [creatingPolicy, setCreatingPolicy] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState(null);
+  const [creatingHoliday, setCreatingHoliday] = useState(false);
+
+  const handleDeletePolicy = async (id) => {
+    if (!window.confirm('¿Eliminar esta política?')) return;
+    await vacationPoliciesAPI.delete(id);
+    onRefresh();
+  };
+
+  const handleDeleteHoliday = async (id) => {
+    if (!window.confirm('¿Eliminar este festivo?')) return;
+    await vacationHolidaysAPI.delete(id);
+    onRefresh();
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Policies card */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+              <Settings className="w-4 h-4 text-slate-500" />
+              Políticas por antigüedad
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Define cuántos días otorgar según los años de antigüedad
+            </p>
+          </div>
+          <button
+            onClick={() => setCreatingPolicy(true)}
+            className="inline-flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-800"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Nueva política
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50/70 border-b border-slate-100">
+              <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                <th className="px-5 py-3 font-medium">Nombre</th>
+                <th className="px-5 py-3 font-medium">Desde (años)</th>
+                <th className="px-5 py-3 font-medium">Hasta (años)</th>
+                <th className="px-5 py-3 font-medium">Días</th>
+                <th className="px-5 py-3 font-medium">Descripción</th>
+                <th className="px-5 py-3 font-medium text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {policies.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-sm">
+                    No hay políticas definidas
+                  </td>
+                </tr>
+              ) : (
+                policies.map((p) => (
+                  <tr key={p.id} className="hover:bg-slate-50/60">
+                    <td className="px-5 py-3 text-sm font-medium text-slate-900">{p.name}</td>
+                    <td className="px-5 py-3 text-sm text-slate-700">{p.yearsFrom}</td>
+                    <td className="px-5 py-3 text-sm text-slate-700">
+                      {p.yearsTo >= 999 ? '∞' : p.yearsTo}
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
+                        {p.days} días
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-xs text-slate-500 max-w-xs truncate">
+                      {p.description || '—'}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setEditingPolicy(p)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                          title="Editar"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeletePolicy(p.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          title="Eliminar"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Holidays card */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+              <PartyPopper className="w-4 h-4 text-orange-500" />
+              Días festivos
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Fechas marcadas como festivos — no computan en las solicitudes
+            </p>
+          </div>
+          <button
+            onClick={() => setCreatingHoliday(true)}
+            className="inline-flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-800"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Nuevo festivo
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50/70 border-b border-slate-100">
+              <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                <th className="px-5 py-3 font-medium">Fecha</th>
+                <th className="px-5 py-3 font-medium">Nombre</th>
+                <th className="px-5 py-3 font-medium">País</th>
+                <th className="px-5 py-3 font-medium">Recurrente</th>
+                <th className="px-5 py-3 font-medium text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {holidays.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-8 text-center text-slate-400 text-sm">
+                    No hay festivos definidos
+                  </td>
+                </tr>
+              ) : (
+                holidays.map((h) => (
+                  <tr key={h.id} className="hover:bg-slate-50/60">
+                    <td className="px-5 py-3 text-sm font-medium text-slate-900">{h.date}</td>
+                    <td className="px-5 py-3 text-sm text-slate-700">{h.name}</td>
+                    <td className="px-5 py-3 text-xs text-slate-500">{h.country}</td>
+                    <td className="px-5 py-3">
+                      {h.recurring ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 text-xs font-semibold">
+                          Anual
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">Solo {h.date.slice(0, 4)}</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setEditingHoliday(h)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                          title="Editar"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteHoliday(h.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          title="Eliminar"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {(editingPolicy || creatingPolicy) && (
+        <PolicyEditModal
+          policy={editingPolicy}
+          onClose={() => {
+            setEditingPolicy(null);
+            setCreatingPolicy(false);
+          }}
+          onSave={async (data) => {
+            if (editingPolicy) {
+              await vacationPoliciesAPI.update(editingPolicy.id, data);
+            } else {
+              await vacationPoliciesAPI.create(data);
+            }
+            onRefresh();
+          }}
+        />
+      )}
+
+      {(editingHoliday || creatingHoliday) && (
+        <HolidayEditModal
+          holiday={editingHoliday}
+          onClose={() => {
+            setEditingHoliday(null);
+            setCreatingHoliday(false);
+          }}
+          onSave={async (data) => {
+            if (editingHoliday) {
+              await vacationHolidaysAPI.update(editingHoliday.id, data);
+            } else {
+              await vacationHolidaysAPI.create(data);
+            }
+            onRefresh();
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+// =============== PolicyEditModal ===============
+
+const PolicyEditModal = ({ policy, onClose, onSave }) => {
+  const [form, setForm] = useState({
+    name: policy?.name || '',
+    yearsFrom: policy?.yearsFrom ?? 0,
+    yearsTo: policy?.yearsTo ?? 1,
+    days: policy?.days ?? 12,
+    description: policy?.description || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    setError('');
+    if (form.yearsTo <= form.yearsFrom) {
+      setError('Años hasta debe ser mayor que Años desde');
+      return;
+    }
+    if (form.days <= 0) {
+      setError('Los días deben ser mayores a 0');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({
+        name: form.name || `${form.yearsFrom} - ${form.yearsTo} años`,
+        yearsFrom: Number(form.yearsFrom),
+        yearsTo: Number(form.yearsTo),
+        days: Number(form.days),
+        description: form.description,
+      });
+      onClose();
+    } catch (e) {
+      setError(e.message || 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.97 }}
+        animate={{ scale: 1 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
+      >
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900">
+            {policy ? 'Editar política' : 'Nueva política'}
+          </h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100">
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Nombre</label>
+            <input
+              type="text"
+              placeholder="Ej: 0 - 1 año"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Años desde</label>
+              <input
+                type="number"
+                min={0}
+                value={form.yearsFrom}
+                onChange={(e) => setForm({ ...form, yearsFrom: e.target.value })}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Años hasta</label>
+              <input
+                type="number"
+                min={1}
+                value={form.yearsTo}
+                onChange={(e) => setForm({ ...form, yearsTo: e.target.value })}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">
+              Días otorgados
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={form.days}
+              onChange={(e) => setForm({ ...form, days: e.target.value })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Descripción</label>
+            <textarea
+              rows={2}
+              placeholder="Opcional"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
+            />
+          </div>
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+// =============== HolidayEditModal ===============
+
+const HolidayEditModal = ({ holiday, onClose, onSave }) => {
+  const [form, setForm] = useState({
+    date: holiday?.date || '',
+    name: holiday?.name || '',
+    country: holiday?.country || 'ES',
+    recurring: holiday?.recurring ?? true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    setError('');
+    if (!form.date || !form.name) {
+      setError('Fecha y nombre son obligatorios');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(form);
+      onClose();
+    } catch (e) {
+      setError(e.message || 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.97 }}
+        animate={{ scale: 1 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
+      >
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900">
+            {holiday ? 'Editar festivo' : 'Nuevo festivo'}
+          </h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100">
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Fecha</label>
+            <input
+              type="date"
+              value={form.date}
+              onChange={(e) => setForm({ ...form, date: e.target.value })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Nombre</label>
+            <input
+              type="text"
+              placeholder="Ej: Navidad"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">País</label>
+            <input
+              type="text"
+              maxLength={3}
+              placeholder="ES"
+              value={form.country}
+              onChange={(e) => setForm({ ...form, country: e.target.value.toUpperCase() })}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.recurring}
+              onChange={(e) => setForm({ ...form, recurring: e.target.checked })}
+              className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+            />
+            <span className="text-sm text-slate-700">
+              Se repite cada año (mismo día y mes)
+            </span>
+          </label>
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 // =============== Main View ===============
 
 const VacationsView = () => {
@@ -869,8 +1656,11 @@ const VacationsView = () => {
   const [employees, setEmployees] = useState([]);
   const [balances, setBalances] = useState([]);
   const [myBalance, setMyBalance] = useState(null);
+  const [holidays, setHolidays] = useState([]);
+  const [policies, setPolicies] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const [activeTab, setActiveTab] = useState('solicitudes'); // solicitudes | bolsa | politicas
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -879,12 +1669,16 @@ const VacationsView = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [reqs, emps] = await Promise.all([
+      const [reqs, emps, hols, pols] = await Promise.all([
         vacationsAPI.list({ status: filterStatus, search }),
         isAdmin ? employeesAPI.getAll() : Promise.resolve([]),
+        vacationHolidaysAPI.list().catch(() => []),
+        vacationPoliciesAPI.list().catch(() => []),
       ]);
       setRequests(reqs);
       setEmployees(emps);
+      setHolidays(hols);
+      setPolicies(pols);
 
       if (isAdmin) {
         const bs = await vacationsAPI.balances();
@@ -989,6 +1783,44 @@ const VacationsView = () => {
           Nueva solicitud
         </button>
       </div>
+
+      {/* Sub-navigation tabs */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-1.5 shadow-sm inline-flex">
+        {[
+          { key: 'solicitudes', label: 'Solicitudes', icon: ListChecks },
+          { key: 'bolsa', label: 'Bolsa de días', icon: WalletIcon },
+          { key: 'politicas', label: 'Políticas', icon: Settings, adminOnly: true },
+        ].map((t) => {
+          if (t.adminOnly && !isAdmin) return null;
+          const Icon = t.icon;
+          const active = activeTab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                active
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <AnimatePresence mode="wait">
+        {activeTab === 'solicitudes' && (
+          <motion.div
+            key="solicitudes"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-6"
+          >
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1164,8 +1996,48 @@ const VacationsView = () => {
         </div>
       </div>
 
-      {/* Admin: balance summary */}
-      {isAdmin && balances.length > 0 && (
+      {/* Admin: balance summary - MOVED to "bolsa" tab */}
+          </motion.div>
+        )}
+
+        {activeTab === 'bolsa' && (
+          <motion.div
+            key="bolsa"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-6"
+          >
+            <BolsaTab
+              isAdmin={isAdmin}
+              balances={balances}
+              myBalance={myBalance}
+              policies={policies}
+            />
+          </motion.div>
+        )}
+
+        {activeTab === 'politicas' && isAdmin && (
+          <motion.div
+            key="politicas"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-6"
+          >
+            <PoliciesTab
+              policies={policies}
+              holidays={holidays}
+              onRefresh={fetchAll}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Admin: balance summary OLD (rendered only inside "bolsa" tab now) */}
+      {false && isAdmin && balances.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1234,12 +2106,15 @@ const VacationsView = () => {
         isAdmin={isAdmin}
         currentEmployeeId={user?.employee_id}
         balance={myBalance}
+        balances={balances}
+        holidays={holidays}
       />
 
       {reviewing && (
         <EditRequestModal
           request={reviewing}
           balance={reviewingBalance}
+          holidays={holidays}
           onClose={() => setReviewing(null)}
           onSave={handleSaveEdit}
         />

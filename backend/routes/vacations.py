@@ -34,25 +34,77 @@ def parse_iso(d: str) -> date:
         raise HTTPException(status_code=400, detail=f"Fecha inválida: {d}. Usa formato YYYY-MM-DD")
 
 
-def count_business_days(start: date, end: date) -> int:
-    """Cuenta días laborables (lun-vie) entre start y end inclusive."""
+async def get_holiday_set(year: int) -> set:
+    """Devuelve un set de fechas (date) que son festivos para el año dado."""
+    items = await db.vacation_holidays.find({}, {"_id": 0}).to_list(1000)
+    out = set()
+    for h in items:
+        try:
+            d = parse_iso(h["date"])
+        except Exception:
+            continue
+        if h.get("recurring"):
+            try:
+                out.add(date(year, d.month, d.day))
+            except ValueError:
+                pass
+        else:
+            if d.year == year:
+                out.add(d)
+    return out
+
+
+def count_business_days(start: date, end: date, holidays: set = None) -> int:
+    """Cuenta días laborables (lun-vie) entre start y end inclusive, excluyendo festivos."""
     if end < start:
         return 0
+    holidays = holidays or set()
     days = 0
     cur = start
     while cur <= end:
-        if cur.weekday() < 5:  # 0=Mon ... 4=Fri
+        if cur.weekday() < 5 and cur not in holidays:
             days += 1
         cur += timedelta(days=1)
     return days
 
 
-def next_business_day(d: date) -> date:
-    """Devuelve el siguiente día hábil después de d."""
+def next_business_day(d: date, holidays: set = None) -> date:
+    """Devuelve el siguiente día hábil después de d (saltando finde y festivos)."""
+    holidays = holidays or set()
     cur = d + timedelta(days=1)
-    while cur.weekday() >= 5:
+    while cur.weekday() >= 5 or cur in holidays:
         cur += timedelta(days=1)
     return cur
+
+
+async def compute_seniority_years(employee_id: str) -> float:
+    """Antigüedad del empleado en años (decimal)."""
+    emp = await db.employees.find_one({"id": employee_id}, {"_id": 0})
+    if not emp or not emp.get("hireDate"):
+        return 0.0
+    try:
+        hire = parse_iso(emp["hireDate"])
+    except Exception:
+        return 0.0
+    today = date.today()
+    diff_days = (today - hire).days
+    if diff_days < 0:
+        return 0.0
+    return round(diff_days / 365.25, 2)
+
+
+async def days_from_policy(seniority_years: float) -> int:
+    """Devuelve los días que corresponden según la política para esa antigüedad."""
+    policies = await db.vacation_policies.find({}, {"_id": 0}).sort("yearsFrom", 1).to_list(200)
+    for p in policies:
+        if p["yearsFrom"] <= seniority_years < p["yearsTo"]:
+            return p["days"]
+    # fallback al rango más alto si excede
+    if policies:
+        highest = max(policies, key=lambda x: x["yearsFrom"])
+        if seniority_years >= highest["yearsFrom"]:
+            return highest["days"]
+    return DEFAULT_ANNUAL_DAYS
 
 
 async def enrich_request(req: dict) -> dict:
@@ -74,16 +126,18 @@ async def get_or_create_balance(employee_id: str, year: int) -> dict:
         return bal
 
     emp = await db.employees.find_one({"id": employee_id}, {"_id": 0})
+    seniority = await compute_seniority_years(employee_id)
+    auto_days = await days_from_policy(seniority)
     new_bal = {
         "employeeId": employee_id,
         "employeeName": emp.get("name") if emp else None,
         "employeeAvatar": emp.get("avatar") if emp else None,
         "employeeDepartment": emp.get("department") if emp else None,
         "year": year,
-        "totalDays": DEFAULT_ANNUAL_DAYS,
+        "totalDays": auto_days,
         "daysUsed": 0,
         "daysPending": 0,
-        "daysAvailable": DEFAULT_ANNUAL_DAYS,
+        "daysAvailable": auto_days,
     }
     await db.vacation_balances.insert_one(new_bal.copy())
     return new_bal
@@ -142,6 +196,12 @@ async def recompute_balance(employee_id: str, year: int) -> dict:
         "daysPending": days_pending,
         "daysAvailable": available,
     })
+
+    # Enrich with seniority + hireDate
+    emp = await db.employees.find_one({"id": employee_id}, {"_id": 0})
+    seniority = await compute_seniority_years(employee_id)
+    bal["seniorityYears"] = seniority
+    bal["hireDate"] = emp.get("hireDate") if emp else None
     return bal
 
 
@@ -259,6 +319,10 @@ async def create_request(
     today = date.today()
     count_weekends = bool(data.countWeekends)
 
+    # Obtener festivos del año relevante
+    target_year = parse_iso(data.startDate or data.selectedDays[0]).year if (data.startDate or data.selectedDays) else today.year
+    holidays_set = await get_holiday_set(target_year)
+
     # Si vienen selectedDays, derivar startDate/endDate/totalDays de la lista
     if data.selectedDays and len(data.selectedDays) > 0:
         try:
@@ -269,10 +333,13 @@ async def create_request(
             raise HTTPException(status_code=400, detail="selectedDays inválidos")
         if parsed[0] < today:
             raise HTTPException(status_code=400, detail="Hay días seleccionados en el pasado")
+        # añadir festivos de los años involucrados
+        for y in {d.year for d in parsed}:
+            holidays_set |= await get_holiday_set(y)
         if count_weekends:
             total_days = len(parsed)
         else:
-            total_days = sum(1 for d in parsed if d.weekday() < 5)
+            total_days = sum(1 for d in parsed if d.weekday() < 5 and d not in holidays_set)
             if total_days <= 0:
                 raise HTTPException(status_code=400, detail="Selecciona al menos un día laborable")
         start = parsed[0]
@@ -286,14 +353,14 @@ async def create_request(
             raise HTTPException(status_code=400, detail="La fecha de inicio no puede ser en el pasado")
         if end < start:
             raise HTTPException(status_code=400, detail="La fecha de fin debe ser posterior o igual a la de inicio")
-        total_days = count_business_days(start, end)
+        total_days = count_business_days(start, end, holidays_set)
         if count_weekends:
             total_days = (end - start).days + 1
         if total_days <= 0:
             raise HTTPException(status_code=400, detail="El rango debe incluir al menos un día laborable")
         selected_days_iso = None
 
-    return_date = next_business_day(end)
+    return_date = next_business_day(end, holidays_set)
 
     # Validar saldo si el tipo cuenta y no es "Justificado"
     if data.type in COUNTABLE_TYPES:
@@ -359,14 +426,18 @@ async def update_request(
         data.selectedDays is not None or data.startDate is not None or data.endDate is not None
     )
     if has_dates_change:
+        # festivos
         if data.selectedDays is not None and len(data.selectedDays) > 0:
             parsed = sorted({parse_iso(d) for d in data.selectedDays})
             if not parsed:
                 raise HTTPException(status_code=400, detail="selectedDays inválidos")
+            holidays_set = set()
+            for y in {d.year for d in parsed}:
+                holidays_set |= await get_holiday_set(y)
             if count_weekends:
                 total_days = len(parsed)
             else:
-                total_days = sum(1 for d in parsed if d.weekday() < 5)
+                total_days = sum(1 for d in parsed if d.weekday() < 5 and d not in holidays_set)
                 if total_days <= 0:
                     raise HTTPException(status_code=400, detail="Selecciona al menos un día laborable")
             start = parsed[0]
@@ -379,7 +450,10 @@ async def update_request(
             end = parse_iso(end_iso)
             if end < start:
                 raise HTTPException(status_code=400, detail="endDate debe ser >= startDate")
-            total_days = count_business_days(start, end)
+            holidays_set = await get_holiday_set(start.year)
+            if start.year != end.year:
+                holidays_set |= await get_holiday_set(end.year)
+            total_days = count_business_days(start, end, holidays_set)
             if count_weekends:
                 total_days = (end - start).days + 1
             update["selectedDays"] = None
@@ -387,7 +461,7 @@ async def update_request(
         update["startDate"] = start.strftime("%Y-%m-%d")
         update["endDate"] = end.strftime("%Y-%m-%d")
         update["totalDays"] = total_days
-        update["returnDate"] = next_business_day(end).strftime("%Y-%m-%d")
+        update["returnDate"] = next_business_day(end, holidays_set).strftime("%Y-%m-%d")
 
     if data.type is not None:
         update["type"] = data.type

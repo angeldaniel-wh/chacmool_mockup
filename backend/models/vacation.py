@@ -67,3 +67,5 @@ class VacationBalance(BaseModel):
     daysUsed: int = 0          # Días formalmente consumidos (Aprobado de tipo que resta)
     daysPending: int = 0       # Días en solicitudes pendientes
     daysAvailable: int = 12    # totalDays - daysUsed
+    seniorityYears: Optional[float] = 0
+    hireDate: Optional[str] = None

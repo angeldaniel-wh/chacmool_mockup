@@ -462,6 +462,72 @@ export const vacationsAPI = {
   },
 };
 
+// Vacation Policies API
+export const vacationPoliciesAPI = {
+  list: async () => {
+    const r = await fetch(`${API_URL}/api/vacation-policies`, { headers: getAuthHeaders() });
+    if (!r.ok) throw new Error('Failed to fetch policies');
+    return r.json();
+  },
+  create: async (data) => {
+    const r = await fetch(`${API_URL}/api/vacation-policies`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to create policy');
+    }
+    return r.json();
+  },
+  update: async (id, data) => {
+    const r = await fetch(`${API_URL}/api/vacation-policies/${id}`, {
+      method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!r.ok) throw new Error('Failed to update policy');
+    return r.json();
+  },
+  delete: async (id) => {
+    const r = await fetch(`${API_URL}/api/vacation-policies/${id}`, {
+      method: 'DELETE', headers: getAuthHeaders(),
+    });
+    if (!r.ok) throw new Error('Failed to delete policy');
+    return r.json();
+  },
+};
+
+// Vacation Holidays API
+export const vacationHolidaysAPI = {
+  list: async () => {
+    const r = await fetch(`${API_URL}/api/vacation-holidays`, { headers: getAuthHeaders() });
+    if (!r.ok) throw new Error('Failed to fetch holidays');
+    return r.json();
+  },
+  create: async (data) => {
+    const r = await fetch(`${API_URL}/api/vacation-holidays`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to create holiday');
+    }
+    return r.json();
+  },
+  update: async (id, data) => {
+    const r = await fetch(`${API_URL}/api/vacation-holidays/${id}`, {
+      method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!r.ok) throw new Error('Failed to update holiday');
+    return r.json();
+  },
+  delete: async (id) => {
+    const r = await fetch(`${API_URL}/api/vacation-holidays/${id}`, {
+      method: 'DELETE', headers: getAuthHeaders(),
+    });
+    if (!r.ok) throw new Error('Failed to delete holiday');
+    return r.json();
+  },
+};
+
 // Empleado A Evaluations API
 export const empleadoAAPI = {
   // Plans
