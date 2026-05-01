@@ -247,6 +247,7 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [limitWarning, setLimitWarning] = useState('');
+  const [suggestedId, setSuggestedId] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -259,6 +260,7 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
       });
       setError('');
       setLimitWarning('');
+      setSuggestedId('');
     }
   }, [open, currentEmployeeId]);
 
@@ -452,11 +454,17 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
                     Vacaciones sugeridas (opcional)
                   </label>
                   <select
-                    value=""
+                    value={suggestedId}
                     onChange={(e) => {
-                      const rng = suggestedRanges.find((r) => r.id === e.target.value);
+                      const id = e.target.value;
+                      setSuggestedId(id);
+                      if (!id) {
+                        // Deseleccionar limpia el calendario
+                        handleCalendarChange([]);
+                        return;
+                      }
+                      const rng = suggestedRanges.find((r) => r.id === id);
                       if (!rng) return;
-                      // Construir arreglo de días laborables entre start y end
                       const days = buildSelectedDaysFromRange(rng.startDate, rng.endDate, form.countWeekends);
                       handleCalendarChange(days);
                     }}
@@ -491,7 +499,10 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
                 )}
                 <Calendar360
                   value={sortedDays}
-                  onChange={handleCalendarChange}
+                  onChange={(days) => {
+                    setSuggestedId(''); // edición manual desvincula el rango aplicado
+                    handleCalendarChange(days);
+                  }}
                   countWeekends={form.countWeekends}
                   holidays={holidays}
                 />
