@@ -411,7 +411,20 @@ export const vacationsAPI = {
     });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
-      throw new Error(err.detail || 'Failed to create vacation request');
+      const detail = Array.isArray(err.detail)
+        ? err.detail.map((e) => e.msg || JSON.stringify(e)).join(', ')
+        : err.detail;
+      throw new Error(detail || `Error ${r.status} al crear la solicitud`);
+    }
+    return r.json();
+  },
+  sign: async (id, stage) => {
+    const r = await fetch(`${API_URL}/api/vacations/${id}/sign`, {
+      method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ stage }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Error al firmar la solicitud');
     }
     return r.json();
   },

@@ -35,6 +35,7 @@ async def login(login_data: LoginRequest):
     
     user_data = {
         "id": user["id"],
+        "employee_id": user.get("employee_id"),
         "email": user["email"],
         "name": user["name"],
         "role": user["role"],
@@ -90,6 +91,7 @@ async def get_me(current_user: dict = Depends(get_current_active_user)):
     """Obtener usuario actual"""
     return {
         "id": current_user["id"],
+        "employee_id": current_user.get("employee_id"),
         "email": current_user["email"],
         "name": current_user["name"],
         "role": current_user["role"],

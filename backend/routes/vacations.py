@@ -411,6 +411,15 @@ async def create_request(
         "reason": data.reason or "",
         "adminComment": None,
         "attachmentUrl": data.attachmentUrl,
+        "signedByEmployee": False,
+        "signedByEmployeeAt": None,
+        "signedByEmployeeName": None,
+        "signedByManager": False,
+        "signedByManagerAt": None,
+        "signedByManagerName": None,
+        "signedByDirector": False,
+        "signedByDirectorAt": None,
+        "signedByDirectorName": None,
         "createdAt": datetime.now(),
         "reviewedAt": None,
         "reviewedBy": None,
@@ -587,3 +596,91 @@ async def adjust_balance(
         upsert=True,
     )
     return await recompute_balance(employee_id, year)
+
+
+# ---------- Sign / Authorize stage ----------
+
+@router.post("/{request_id}/sign")
+async def sign_request_stage(
+    request_id: str,
+    payload: dict,
+    current_user: dict = Depends(get_current_active_user),
+):
+    """Firma una etapa del flujo de aprobación.
+    Reglas de rol:
+      - empleado: solo puede firmar la etapa "employee".
+      - admin/manager: pueden firmar las etapas "manager" y "director".
+    payload = {"stage": "employee" | "manager" | "director"}
+    """
+    stage = (payload or {}).get("stage", "").lower()
+    if stage not in {"employee", "manager", "director"}:
+        raise HTTPException(status_code=400, detail="stage inválido")
+
+    role = (current_user.get("role") or "").lower()
+    is_admin = role in {"admin", "manager"}
+    is_employee = role in {"empleado", "employee"}
+
+    # Validación de permisos
+    if stage == "employee" and not (is_employee or is_admin):
+        raise HTTPException(status_code=403, detail="No tienes permisos para firmar esta etapa")
+    if stage in {"manager", "director"} and not is_admin:
+        raise HTTPException(status_code=403, detail="No tienes permisos para firmar esta etapa")
+
+    req = await db.vacation_requests.find_one({"id": request_id}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    # Empleado solo firma su propia solicitud
+    if stage == "employee" and is_employee and not is_admin:
+        if req.get("employeeId") != current_user.get("employee_id"):
+            raise HTTPException(status_code=403, detail="Solo puedes firmar tu propia solicitud")
+
+    user_label = current_user.get("name") or current_user.get("email")
+    now = datetime.now()
+
+    update = {}
+    if stage == "employee":
+        update = {
+            "signedByEmployee": True,
+            "signedByEmployeeAt": now,
+            "signedByEmployeeName": user_label,
+        }
+    elif stage == "manager":
+        update = {
+            "signedByManager": True,
+            "signedByManagerAt": now,
+            "signedByManagerName": user_label,
+        }
+    elif stage == "director":
+        update = {
+            "signedByDirector": True,
+            "signedByDirectorAt": now,
+            "signedByDirectorName": user_label,
+        }
+
+    await db.vacation_requests.update_one({"id": request_id}, {"$set": update})
+
+    # Si las 3 firmas están completas y status sigue "Pendiente", marcar como Aprobado
+    updated = await db.vacation_requests.find_one({"id": request_id}, {"_id": 0})
+    if (
+        updated.get("signedByEmployee")
+        and updated.get("signedByManager")
+        and updated.get("signedByDirector")
+        and updated.get("status") == "Pendiente"
+    ):
+        await db.vacation_requests.update_one(
+            {"id": request_id},
+            {"$set": {
+                "status": "Aprobado",
+                "reviewedAt": now,
+                "reviewedBy": user_label,
+            }},
+        )
+        try:
+            start = parse_iso(updated["startDate"])
+            await recompute_balance(updated["employeeId"], start.year)
+        except Exception:
+            pass
+        updated = await db.vacation_requests.find_one({"id": request_id}, {"_id": 0})
+
+    return await enrich_request(updated)

@@ -39,6 +39,7 @@ class UserInDB(UserBase):
 
 class User(UserBase):
     id: str
+    employee_id: Optional[str] = None
     created_at: datetime
 
 class Token(BaseModel):

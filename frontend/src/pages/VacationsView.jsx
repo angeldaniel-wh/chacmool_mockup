@@ -303,7 +303,9 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
     return balance || null;
   }, [isAdmin, form.employeeId, balances, balance]);
 
-  const availableDays = effectiveBalance?.daysAvailable ?? null;
+  const availableDays = effectiveBalance
+    ? Math.max((effectiveBalance.daysAvailable ?? 0) - (effectiveBalance.daysPending ?? 0), 0)
+    : null;
   const exceedsBalance = consumesBalance && availableDays != null && totalDays > availableDays;
 
   // Calcula días laborables (o totales si countWeekends) de un array de ISOs
@@ -1550,7 +1552,17 @@ const BolsaTab = ({ isAdmin, balances, myBalance, policies, employees, onRefresh
                 <th className="px-5 py-3 font-medium">Usados</th>
                 <th className="px-5 py-3 font-medium">Pendientes</th>
                 <th className="px-5 py-3 font-medium">Disponibles</th>
-                <th className="px-5 py-3 font-medium">Uso (semáforo)</th>
+                <th className="px-5 py-3 font-medium">
+                  <div className="inline-flex items-center gap-1.5 group/uso relative cursor-help">
+                    <span>Uso</span>
+                    <AlertCircle className="w-3 h-3 text-slate-400" />
+                    <span className="invisible group-hover/uso:visible opacity-0 group-hover/uso:opacity-100 transition-opacity absolute left-0 top-full mt-1 z-20 w-64 bg-slate-900 text-white text-[11px] font-normal normal-case tracking-normal rounded-lg p-2.5 shadow-lg pointer-events-none">
+                      <span className="block font-semibold mb-1">Semáforo de uso</span>
+                      <span className="block">El semáforo indica el nivel de uso de la bolsa de días según los días utilizados.</span>
+                      <span className="block mt-1 text-slate-300">🟢 Verde: bajo · 🟡 Amarillo: medio · 🔴 Rojo: alto/crítico</span>
+                    </span>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -3229,7 +3241,12 @@ const VacationsView = () => {
         <VacationDocument
           request={documentRequest}
           employee={employees.find((e) => e.id === documentRequest.employeeId)}
+          currentUser={user}
           onClose={() => setDocumentRequest(null)}
+          onUpdate={(updated) => {
+            setDocumentRequest(updated);
+            fetchAll();
+          }}
         />
       )}
     </div>

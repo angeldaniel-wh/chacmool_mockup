@@ -25,6 +25,16 @@ class VacationRequest(BaseModel):
     reason: str = ""
     adminComment: Optional[str] = None
     attachmentUrl: Optional[str] = None
+    # Firmas / autorizaciones del flujo
+    signedByEmployee: Optional[bool] = False
+    signedByEmployeeAt: Optional[datetime] = None
+    signedByEmployeeName: Optional[str] = None
+    signedByManager: Optional[bool] = False
+    signedByManagerAt: Optional[datetime] = None
+    signedByManagerName: Optional[str] = None
+    signedByDirector: Optional[bool] = False
+    signedByDirectorAt: Optional[datetime] = None
+    signedByDirectorName: Optional[str] = None
     createdAt: datetime
     reviewedAt: Optional[datetime] = None
     reviewedBy: Optional[str] = None
