@@ -672,7 +672,7 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
 
 // =============== Calendar (multi-day select) ===============
 
-const Calendar360 = ({ value = [], onChange, countWeekends = false, monthOffset = 0, holidays = [] }) => {
+const Calendar360 = ({ value = [], onChange, countWeekends = false, monthOffset = 0, holidays = [], allowPast = false }) => {
   // value: array of ISO dates "YYYY-MM-DD"
   // holidays: array of objects with {date: ISO, name, recurring}
   const [viewMonth, setViewMonth] = useState(() => {
@@ -733,6 +733,7 @@ const Calendar360 = ({ value = [], onChange, countWeekends = false, monthOffset 
   const isHoliday = (d) => holidaySet.has(toIso(d));
   const holidayName = (d) => holidaySet.get(toIso(d));
   const isPast = (d) => {
+    if (allowPast) return false;
     const t = new Date();
     t.setHours(0, 0, 0, 0);
     return d < t;
@@ -2549,6 +2550,15 @@ const SuggestedEditModal = ({ range, holidays, onClose, onSave }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Posicionar el calendario en el mes de la primera fecha al editar
+  const initialMonthOffset = useMemo(() => {
+    if (!range?.startDate) return 0;
+    const d = new Date(range.startDate + 'T00:00:00');
+    if (isNaN(d)) return 0;
+    const today = new Date();
+    return (d.getFullYear() - today.getFullYear()) * 12 + (d.getMonth() - today.getMonth());
+  }, [range?.startDate]);
+
   const sortedDays = useMemo(() => [...days].sort(), [days]);
   const startDate = sortedDays[0] || null;
   const endDate = sortedDays[sortedDays.length - 1] || null;
@@ -2691,6 +2701,8 @@ const SuggestedEditModal = ({ range, holidays, onClose, onSave }) => {
               onChange={setDays}
               countWeekends={true}
               holidays={holidays}
+              allowPast={true}
+              monthOffset={initialMonthOffset}
             />
             {error && (
               <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2 text-xs flex items-center gap-2">
