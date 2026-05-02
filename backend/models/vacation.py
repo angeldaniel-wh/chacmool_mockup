@@ -3,7 +3,7 @@ from typing import Optional, Literal, List
 from datetime import datetime, date
 
 
-VacationType = Literal["Vacaciones", "Enfermedad", "Asuntos Propios", "Compensatorio"]
+VacationType = Literal["Vacaciones", "Otro", "Enfermedad", "Asuntos Propios", "Compensatorio"]
 VacationStatus = Literal["Pendiente", "Aprobado", "Rechazado", "Justificado"]
 
 
@@ -20,6 +20,7 @@ class VacationRequest(BaseModel):
     totalDays: int
     selectedDays: Optional[List[str]] = None  # lista explícita de días ISO seleccionados
     countWeekends: Optional[bool] = False
+    deductsBalance: Optional[bool] = None  # si los días deben restarse de la bolsa
     status: VacationStatus = "Pendiente"
     reason: str = ""
     adminComment: Optional[str] = None
@@ -36,6 +37,7 @@ class VacationRequestCreate(BaseModel):
     endDate: str
     selectedDays: Optional[List[str]] = None
     countWeekends: Optional[bool] = False
+    deductsBalance: Optional[bool] = None
     reason: str = ""
     attachmentUrl: Optional[str] = None
 
@@ -52,6 +54,7 @@ class VacationRequestUpdate(BaseModel):
     endDate: Optional[str] = None
     selectedDays: Optional[List[str]] = None
     countWeekends: Optional[bool] = None
+    deductsBalance: Optional[bool] = None
     status: Optional[VacationStatus] = None
     adminComment: Optional[str] = None
     reason: Optional[str] = None

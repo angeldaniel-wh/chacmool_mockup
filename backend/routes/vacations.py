@@ -22,9 +22,17 @@ router = APIRouter(prefix="/api/vacations", tags=["vacations"])
 
 # ---------- Helpers ----------
 
-# Tipos cuyas solicitudes "Aprobado" RESTAN del saldo de vacaciones
+# Tipos cuyas solicitudes "Aprobado" RESTAN del saldo de vacaciones (legacy / fallback)
 COUNTABLE_TYPES = {"Vacaciones", "Asuntos Propios", "Compensatorio"}
 DEFAULT_ANNUAL_DAYS = 12
+
+
+def deducts_balance(req: dict) -> bool:
+    """Determina si una solicitud descuenta de la bolsa.
+    Prioriza el campo explícito `deductsBalance`; cae a la lógica legacy por tipo."""
+    if req.get("deductsBalance") is not None:
+        return bool(req["deductsBalance"])
+    return req.get("type") in COUNTABLE_TYPES
 
 
 def parse_iso(d: str) -> date:
@@ -151,11 +159,12 @@ async def recompute_balance(employee_id: str, year: int) -> dict:
     approved = await db.vacation_requests.find({
         "employeeId": employee_id,
         "status": "Aprobado",
-        "type": {"$in": list(COUNTABLE_TYPES)},
     }, {"_id": 0}).to_list(1000)
 
     days_used = 0
     for r in approved:
+        if not deducts_balance(r):
+            continue
         try:
             start = parse_iso(r["startDate"])
             if start.year == year:
@@ -166,11 +175,12 @@ async def recompute_balance(employee_id: str, year: int) -> dict:
     pending = await db.vacation_requests.find({
         "employeeId": employee_id,
         "status": "Pendiente",
-        "type": {"$in": list(COUNTABLE_TYPES)},
     }, {"_id": 0}).to_list(1000)
 
     days_pending = 0
     for r in pending:
+        if not deducts_balance(r):
+            continue
         try:
             start = parse_iso(r["startDate"])
             if start.year == year:
@@ -362,8 +372,15 @@ async def create_request(
 
     return_date = next_business_day(end, holidays_set)
 
-    # Validar saldo si el tipo cuenta y no es "Justificado"
-    if data.type in COUNTABLE_TYPES:
+    # Determinar si descuenta de la bolsa
+    if data.deductsBalance is not None:
+        deducts = bool(data.deductsBalance)
+    else:
+        # Default por tipo (legacy)
+        deducts = data.type in COUNTABLE_TYPES
+
+    # Validar saldo si descuenta
+    if deducts:
         bal = await recompute_balance(employee_id, start.year)
         # daysAvailable - daysPending para evitar sobrepasar
         effective = bal["daysAvailable"] - bal.get("daysPending", 0)
@@ -389,6 +406,7 @@ async def create_request(
         "totalDays": total_days,
         "selectedDays": selected_days_iso,
         "countWeekends": count_weekends,
+        "deductsBalance": deducts,
         "status": "Pendiente",
         "reason": data.reason or "",
         "adminComment": None,
@@ -469,6 +487,8 @@ async def update_request(
         update["reason"] = data.reason
     if data.adminComment is not None:
         update["adminComment"] = data.adminComment
+    if data.deductsBalance is not None:
+        update["deductsBalance"] = bool(data.deductsBalance)
     if data.status is not None:
         update["status"] = data.status
         update["reviewedAt"] = datetime.now()

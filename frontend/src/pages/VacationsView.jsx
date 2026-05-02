@@ -180,10 +180,15 @@ const semaphoreBar = (pct) => {
 
 const TYPE_META = {
   Vacaciones: { icon: Coffee, color: 'text-emerald-600 bg-emerald-50' },
+  Otro: { icon: FileText, color: 'text-slate-600 bg-slate-100' },
+  // Legacy types (mantener para retrocompatibilidad de solicitudes antiguas)
   Enfermedad: { icon: Stethoscope, color: 'text-rose-600 bg-rose-50' },
   'Asuntos Propios': { icon: Briefcase, color: 'text-indigo-600 bg-indigo-50' },
   Compensatorio: { icon: Award, color: 'text-amber-600 bg-amber-50' },
 };
+
+// Tipos disponibles para crear/editar (los legacy ya no se ofrecen)
+const ACTIVE_TYPES = ['Vacaciones', 'Otro'];
 
 // =============== Components ===============
 
@@ -242,6 +247,7 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
     type: 'Vacaciones',
     selectedDays: [],
     countWeekends: false,
+    deductsBalance: true,
     reason: '',
   });
   const [submitting, setSubmitting] = useState(false);
@@ -256,6 +262,7 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
         type: 'Vacaciones',
         selectedDays: [],
         countWeekends: false,
+        deductsBalance: true,
         reason: '',
       });
       setError('');
@@ -282,9 +289,10 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
   const valid =
     sortedDays.length > 0 &&
     totalDays > 0 &&
-    (!isAdmin || form.employeeId);
+    (!isAdmin || form.employeeId) &&
+    (form.type !== 'Otro' || (form.reason && form.reason.trim().length > 0));
 
-  const consumesBalance = ['Vacaciones', 'Asuntos Propios', 'Compensatorio'].includes(form.type);
+  const consumesBalance = !!form.deductsBalance;
 
   // Determinar la bolsa efectiva: empleado usa su prop balance; admin busca en `balances` según empleado seleccionado
   const effectiveBalance = useMemo(() => {
@@ -327,7 +335,7 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
     setForm({ ...form, selectedDays: newDays });
   };
 
-  // Si cambia tipo o countWeekends, recalcular si la selección actual sobrepasa
+  // Si cambia tipo, deductsBalance o countWeekends, recalcular si la selección actual sobrepasa
   useEffect(() => {
     if (consumesBalance && availableDays != null && totalDays > availableDays) {
       setLimitWarning(
@@ -337,7 +345,7 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
       setLimitWarning('');
     }
     // eslint-disable-next-line
-  }, [form.type, form.countWeekends, form.employeeId]);
+  }, [form.type, form.deductsBalance, form.countWeekends, form.employeeId]);
 
   const handleSubmit = async () => {
     if (!valid) return;
@@ -355,6 +363,7 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
         type: form.type,
         selectedDays: sortedDays,
         countWeekends: form.countWeekends,
+        deductsBalance: form.deductsBalance,
         startDate: startDate,
         endDate: endDate,
         reason: form.reason,
@@ -424,7 +433,7 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Tipo</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {Object.keys(TYPE_META).map((t) => {
+                  {ACTIVE_TYPES.map((t) => {
                     const meta = TYPE_META[t];
                     const Icon = meta.icon;
                     const active = form.type === t;
@@ -432,12 +441,21 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
                       <button
                         key={t}
                         type="button"
-                        onClick={() => setForm({ ...form, type: t })}
+                        onClick={() => {
+                          // Al cambiar a "Otro" desactivamos el descuento por defecto.
+                          // Al cambiar a "Vacaciones" lo activamos.
+                          setForm({
+                            ...form,
+                            type: t,
+                            deductsBalance: t === 'Vacaciones',
+                          });
+                        }}
                         className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm border transition-all ${
                           active
                             ? 'border-slate-900 bg-slate-900 text-white'
                             : 'border-slate-200 hover:border-slate-300 text-slate-700'
                         }`}
+                        data-testid={`type-${t.toLowerCase()}`}
                       >
                         <Icon className="w-4 h-4" />
                         {t}
@@ -446,6 +464,46 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
                   })}
                 </div>
               </div>
+
+              {/* Razón / motivo */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                  Motivo {form.type === 'Otro' && <span className="text-red-500">*</span>}
+                </label>
+                <textarea
+                  rows={3}
+                  value={form.reason}
+                  onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                  placeholder={
+                    form.type === 'Otro'
+                      ? 'Describe el motivo (ej: enfermedad, cita médica, asunto personal…)'
+                      : 'Describe brevemente el motivo de tu solicitud (opcional)'
+                  }
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
+                  data-testid="reason-input"
+                />
+              </div>
+
+              {/* Descuento de bolsa */}
+              <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 cursor-pointer select-none hover:bg-slate-100/70 transition">
+                <input
+                  type="checkbox"
+                  checked={!!form.deductsBalance}
+                  onChange={(e) => setForm({ ...form, deductsBalance: e.target.checked })}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                  data-testid="deducts-balance-checkbox"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-900">
+                    Descontar estos días de mi bolsa de vacaciones
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {form.deductsBalance
+                      ? 'Los días aprobados restarán del saldo disponible.'
+                      : 'Los días aprobados NO afectarán tu saldo (ej. justificación, comisión).'}
+                  </p>
+                </div>
+              </label>
 
               {/* Rangos Sugeridos */}
               {suggestedRanges.length > 0 && (
@@ -573,17 +631,6 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
                   </div>
                 )}
               </motion.div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Motivo</label>
-                <textarea
-                  rows={3}
-                  value={form.reason}
-                  onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                  placeholder="Describe brevemente el motivo de tu solicitud…"
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
-                />
-              </div>
 
               {error && (
                 <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2.5 text-sm flex items-start gap-2">
@@ -823,6 +870,7 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
   const [status, setStatus] = useState('Pendiente');
   const [reason, setReason] = useState('');
   const [type, setType] = useState('Vacaciones');
+  const [deductsBalance, setDeductsBalance] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -838,7 +886,15 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
     setComment(request.adminComment || '');
     setStatus(request.status || 'Pendiente');
     setReason(request.reason || '');
-    setType(request.type || 'Vacaciones');
+    // Si el tipo es legacy, lo mapeamos a "Otro" para edición. Vacaciones se mantiene.
+    const t = request.type === 'Vacaciones' ? 'Vacaciones' : (request.type === 'Otro' ? 'Otro' : 'Otro');
+    setType(t);
+    // deductsBalance: si viene explícito úsalo; si no, dedúcelo del tipo legacy
+    if (request.deductsBalance != null) {
+      setDeductsBalance(!!request.deductsBalance);
+    } else {
+      setDeductsBalance(['Vacaciones', 'Asuntos Propios', 'Compensatorio'].includes(request.type));
+    }
     setError('');
   }, [request?.id]);
 
@@ -856,7 +912,7 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
   const endDate = sortedDays[sortedDays.length - 1] || null;
   const returnDate = endDate ? computeReturnDate(endDate) : null;
 
-  const consumesBalance = ['Vacaciones', 'Asuntos Propios', 'Compensatorio'].includes(type);
+  const consumesBalance = !!deductsBalance;
 
   const totalBalance = balance?.totalDays ?? 12;
   const usedBalance = balance?.daysUsed ?? 0;
@@ -878,6 +934,7 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
         type,
         selectedDays: sortedDays,
         countWeekends,
+        deductsBalance,
         status,
         adminComment: comment,
         reason,
@@ -1072,7 +1129,7 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
                     Tipo
                   </label>
                   <div className="grid grid-cols-2 gap-2">
-                    {Object.keys(TYPE_META).map((t) => {
+                    {ACTIVE_TYPES.map((t) => {
                       const meta = TYPE_META[t];
                       const Icon = meta.icon;
                       const active = type === t;
@@ -1080,7 +1137,10 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
                         <button
                           key={t}
                           type="button"
-                          onClick={() => setType(t)}
+                          onClick={() => {
+                            setType(t);
+                            setDeductsBalance(t === 'Vacaciones');
+                          }}
                           className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
                             active
                               ? 'border-slate-900 bg-slate-900 text-white'
@@ -1094,6 +1154,27 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
                     })}
                   </div>
                 </div>
+
+                {/* Descuento de bolsa */}
+                <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 cursor-pointer select-none hover:bg-slate-100/70 transition">
+                  <input
+                    type="checkbox"
+                    checked={deductsBalance}
+                    onChange={(e) => setDeductsBalance(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                    data-testid="edit-deducts-balance-checkbox"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900">
+                      Descontar estos días de la bolsa
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {deductsBalance
+                        ? 'Los días aprobados restarán del saldo del empleado.'
+                        : 'Los días aprobados NO afectarán el saldo (justificación / comisión).'}
+                    </p>
+                  </div>
+                </label>
 
                 {/* Comentarios */}
                 <div>
