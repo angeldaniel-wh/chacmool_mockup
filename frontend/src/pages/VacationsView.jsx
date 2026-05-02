@@ -484,26 +484,28 @@ const RequestModal = ({ open, onClose, onSubmit, employees, isAdmin, currentEmpl
                 />
               </div>
 
-              {/* Descuento de bolsa */}
-              <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 cursor-pointer select-none hover:bg-slate-100/70 transition">
-                <input
-                  type="checkbox"
-                  checked={!!form.deductsBalance}
-                  onChange={(e) => setForm({ ...form, deductsBalance: e.target.checked })}
-                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                  data-testid="deducts-balance-checkbox"
-                />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-900">
-                    Descontar estos días de mi bolsa de vacaciones
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {form.deductsBalance
-                      ? 'Los días aprobados restarán del saldo disponible.'
-                      : 'Los días aprobados NO afectarán tu saldo (ej. justificación, comisión).'}
-                  </p>
-                </div>
-              </label>
+              {/* Descuento de bolsa - solo visible para tipo "Otro" */}
+              {form.type === 'Otro' && (
+                <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 cursor-pointer select-none hover:bg-slate-100/70 transition">
+                  <input
+                    type="checkbox"
+                    checked={!!form.deductsBalance}
+                    onChange={(e) => setForm({ ...form, deductsBalance: e.target.checked })}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                    data-testid="deducts-balance-checkbox"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900">
+                      Descontar estos días de mi bolsa de vacaciones
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {form.deductsBalance
+                        ? 'Los días aprobados restarán del saldo disponible.'
+                        : 'Los días aprobados NO afectarán tu saldo (ej. justificación, comisión).'}
+                    </p>
+                  </div>
+                </label>
+              )}
 
               {/* Rangos Sugeridos */}
               {suggestedRanges.length > 0 && (
@@ -1155,26 +1157,28 @@ const EditRequestModal = ({ request, balance, holidays = [], onClose, onSave }) 
                   </div>
                 </div>
 
-                {/* Descuento de bolsa */}
-                <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 cursor-pointer select-none hover:bg-slate-100/70 transition">
-                  <input
-                    type="checkbox"
-                    checked={deductsBalance}
-                    onChange={(e) => setDeductsBalance(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                    data-testid="edit-deducts-balance-checkbox"
-                  />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-slate-900">
-                      Descontar estos días de la bolsa
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {deductsBalance
-                        ? 'Los días aprobados restarán del saldo del empleado.'
-                        : 'Los días aprobados NO afectarán el saldo (justificación / comisión).'}
-                    </p>
-                  </div>
-                </label>
+                {/* Descuento de bolsa - solo visible para tipo "Otro" */}
+                {type === 'Otro' && (
+                  <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 cursor-pointer select-none hover:bg-slate-100/70 transition">
+                    <input
+                      type="checkbox"
+                      checked={deductsBalance}
+                      onChange={(e) => setDeductsBalance(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                      data-testid="edit-deducts-balance-checkbox"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-900">
+                        Descontar estos días de la bolsa
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {deductsBalance
+                          ? 'Los días aprobados restarán del saldo del empleado.'
+                          : 'Los días aprobados NO afectarán el saldo (justificación / comisión).'}
+                      </p>
+                    </div>
+                  </label>
+                )}
 
                 {/* Comentarios */}
                 <div>
